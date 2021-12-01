@@ -1,0 +1,5 @@
+{
+  "projects": {
+    "validator-syntax": "git@github.com:email-utils/validator-syntax.git"
+  }
+}
