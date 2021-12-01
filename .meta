@@ -1,5 +1,7 @@
 {
   "projects": {
-    "validator-syntax": "git@github.com:email-utils/validator-syntax.git"
+    "validator-syntax": "git@github.com:email-utils/validator-syntax.git",
+    "validator-dns": "git@github.com:email-utils/validator-dns.git",
+    "sanitizer": "git@github.com:email-utils/sanitizer.git"
   }
 }

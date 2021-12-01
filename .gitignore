@@ -1,2 +1,4 @@
 /validator-syntax/
+/validator-dns/
+/sanitizer/
 .DS_Store
