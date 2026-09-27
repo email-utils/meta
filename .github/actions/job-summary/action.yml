@@ -1,0 +1,93 @@
+name: Job summary
+description: >-
+  Writes a pass/fail section to $GITHUB_STEP_SUMMARY for a check step,
+  including a trailing log excerpt on failure.
+
+inputs:
+  check-name:
+    description: Human-readable check name for the summary heading, e.g. "Vitest"
+    required: true
+  outcome:
+    description: Outcome of the check step (e.g. steps.run.outcome). Anything other than 'success' is a failure
+    required: true
+  log-file:
+    description: Path to the check's captured output, tailed for the failure summary
+    required: true
+  summary:
+    description: Short single-line markdown stat (e.g. "3 errors across 2 files"), rendered inline in the callout
+    required: false
+    default: ''
+  details:
+    description: Optional longer markdown block (e.g. a failing-test list or table), rendered between the callout and the log
+    required: false
+    default: ''
+  duration:
+    description: Pre-formatted job duration (e.g. "12s", "1m 34s")
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Write job summary
+      shell: bash
+      env:
+        OUTCOME: ${{ inputs.outcome }}
+        CHECK_NAME: ${{ inputs.check-name }}
+        SUMMARY: ${{ inputs.summary }}
+        DURATION: ${{ inputs.duration }}
+        DETAILS: ${{ inputs.details }}
+        LOG_FILE: ${{ inputs.log-file }}
+      run: |
+        if [ "$OUTCOME" = "success" ]; then
+          callout="[!NOTE]"
+          emoji="✅"
+          verb="passed"
+        else
+          callout="[!CAUTION]"
+          emoji="❌"
+          verb="failed"
+        fi
+
+        stat_line=""
+        if [ -n "$SUMMARY" ]; then
+          stat_line=" — $SUMMARY"
+        fi
+
+        meta=""
+        if [ -n "$DURATION" ]; then
+          meta=" · $DURATION"
+        fi
+
+        {
+          echo "> $callout"
+          echo "> $emoji **$CHECK_NAME $verb**$stat_line$meta"
+        } >> "$GITHUB_STEP_SUMMARY"
+
+        if [ -n "$DETAILS" ]; then
+          {
+            echo ""
+            echo "$DETAILS"
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+        if [ "$OUTCOME" != "success" ]; then
+          # A step that never ran leaves no log. CI sets CI=true, which turns
+          # colour on in most tools, so strip ANSI codes. The fence is one
+          # backtick longer than any run in the log, so the log can't close it.
+          if [ -f "$LOG_FILE" ]; then
+            log=$(tail -n 100 "$LOG_FILE" | sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g')
+          else
+            log="(no output captured: $LOG_FILE does not exist)"
+          fi
+          # `|| true`: grep exits 1 when there are no backticks, and the step runs under pipefail.
+          longest=$(printf '%s\n' "$log" | { grep -oE '`+' || true; } | awk '{ if (length > m) m = length } END { print m + 0 }')
+          fence='```'
+          while [ "${#fence}" -le "$longest" ]; do fence="$fence\`"; done
+          {
+            echo ""
+            echo "$fence"
+            printf '%s\n' "$log"
+            echo "$fence"
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi

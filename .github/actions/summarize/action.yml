@@ -1,0 +1,63 @@
+name: Summarize
+description: >-
+  Turns a check's output into the `summary` stat and `details` block that
+  job-summary and pr-comment render.
+
+inputs:
+  check:
+    description: Whose output to read, one of lint, format, typecheck, or vitest
+    required: true
+  log-file:
+    description: The check's captured output, for lint, format, and typecheck
+    required: false
+    default: ''
+  results-file:
+    description: Vitest's JSON reporter output, for vitest
+    required: false
+    default: .reports/vitest/results.json
+  coverage-file:
+    description: coverage-v8's json-summary output, for vitest. Missing means no coverage table
+    required: false
+    default: .reports/coverage/coverage-summary.json
+
+outputs:
+  summary:
+    description: Short single-line markdown stat, e.g. "3 errors across 2 files"
+    value: ${{ steps.summarize.outputs.summary }}
+  details:
+    description: Longer markdown block, empty when there's nothing to list
+    value: ${{ steps.summarize.outputs.details }}
+
+runs:
+  using: composite
+  steps:
+    - name: Summarize output
+      id: summarize
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        CHECK: ${{ inputs.check }}
+        LOG_FILE: ${{ inputs.log-file }}
+        RESULTS_FILE: ${{ inputs.results-file }}
+        COVERAGE_FILE: ${{ inputs.coverage-file }}
+      run: |
+        case "$CHECK" in
+          lint | format | typecheck)
+            # A step that never ran leaves no log, and no stat beats a false "0 errors".
+            if [ ! -f "$LOG_FILE" ]; then
+              echo "No log at '$LOG_FILE', so no summary."
+              exit 0
+            fi
+            # CI=true turns colour on in most tools, and the parsers need plain text.
+            clean="$RUNNER_TEMP/summarize-$CHECK.log"
+            sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g' "$LOG_FILE" > "$clean"
+            bash "$ACTION_PATH/$CHECK.sh" "$clean"
+            ;;
+          vitest)
+            node "$ACTION_PATH/vitest.mjs"
+            ;;
+          *)
+            echo "::error::Unknown check '$CHECK'. Use lint, format, typecheck, or vitest."
+            exit 1
+            ;;
+        esac
