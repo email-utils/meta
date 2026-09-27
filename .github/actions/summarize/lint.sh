@@ -1,11 +1,20 @@
 #!/usr/bin/env bash
 # Summarizes oxlint's output ($1, ANSI-free) into `summary` and `details` on
-# $GITHUB_OUTPUT. Piped, oxlint prints one `file:line:col: severity` line per
-# finding and no total, and warnings exit 0, so this runs regardless of
-# outcome. No `set -e`: `[ "$n" -eq 1 ] && word=singular` exits non-zero on
-# its false branch.
+# $GITHUB_OUTPUT. Warnings exit 0, so this runs regardless of outcome. No
+# `set -e`: `[ "$n" -eq 1 ] && word=singular` exits non-zero on its false
+# branch.
+#
+# Piped, oxlint prints one `file:line:col: severity rule: message` line per
+# finding. On GitHub Actions it prints workflow commands instead, which the
+# runner turns into annotations on the diff:
+#   ::error file=src/a.ts,line=3,endLine=3,col=3,endColumn=12,title=eslint(no-debugger)::src/a.ts:3:3: `debugger` statement is not allowed
+# Those are rewritten into the piped form first, so one parser reads both.
 
-log="$1"
+log=$(mktemp)
+sed -E \
+  -e 's/^::(error|warning) [^:]*title=([^:]*)::([^:]+:[0-9]+:[0-9]+): (.*)$/\3: \1 \2: \4/' \
+  -e 's/^::(error|warning) [^:]*::([^:]+:[0-9]+:[0-9]+): (.*)$/\2: \1 \3/' \
+  "$1" > "$log"
 errors=$(grep -cE '^[^:]+:[0-9]+:[0-9]+: error' "$log" || true)
 warnings=$(grep -cE '^[^:]+:[0-9]+:[0-9]+: warning' "$log" || true)
 files=$(grep -E '^[^:]+:[0-9]+:[0-9]+: (error|warning)' "$log" | cut -d: -f1 | sort -u | wc -l | tr -d ' ' || true)

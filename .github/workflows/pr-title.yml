@@ -1,0 +1,69 @@
+name: PR title
+
+# Checks that a PR's title is a conventional commit, using the types and
+# scopes in meta's commit-conventions.json for the calling repo. The title
+# becomes the squash commit, which release-please reads to pick the next
+# version. Called from each repo's own pr-title.yml, which also runs on
+# `edited` so a retitled PR is rechecked without rerunning the other checks.
+on:
+  workflow_call:
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  pr-title:
+    name: pr-title
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read # check out meta's conventions file
+      pull-requests: read # the title check reads the PR
+    steps:
+      # This workflow's own commit, so the conventions match the pinned
+      # workflow rather than whatever meta's main holds now.
+      - name: Check out meta's commit conventions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .meta
+          sparse-checkout: plugins/email-utils/commit-conventions.json
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Read the types and scopes
+        id: conventions
+        env:
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          file=.meta/plugins/email-utils/commit-conventions.json
+          if ! jq -e --arg repo "$REPO" '.scopes.repos | has($repo)' "$file" > /dev/null; then
+            echo "::error::$REPO has no scopes in meta's commit-conventions.json. Add it there first."
+            exit 1
+          fi
+          delim="ghadelim_$RANDOM$RANDOM"
+          {
+            echo "types<<$delim"
+            jq -r '.types | keys_unsorted[]' "$file"
+            echo "$delim"
+            echo "scopes<<$delim"
+            jq -r --arg repo "$REPO" '.scopes.shared + .scopes.repos[$repo] | keys_unsorted[]' "$file"
+            echo "$delim"
+          } >> "$GITHUB_OUTPUT"
+
+      # Scopes are optional, but one that's given must be on the list.
+      # release-please titles its PRs `chore(main): release …`, and `main`
+      # isn't a scope, so its label exempts them.
+      - name: Check the title
+        uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          types: ${{ steps.conventions.outputs.types }}
+          scopes: ${{ steps.conventions.outputs.scopes }}
+          ignoreLabels: |
+            autorelease: pending
