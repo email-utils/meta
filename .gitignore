@@ -1,4 +1,11 @@
-/validator-syntax/
-/validator-dns/
-/sanitizer/
 .DS_Store
+node_modules/
+
+# The package repos are cloned here by `mani sync`, which owns this block.
+# mani #
+org-github
+validator-dns
+sanitizer
+classifier
+validator-syntax
+# mani #

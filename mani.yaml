@@ -1,0 +1,105 @@
+# The email-utils workspace. `mani sync` clones every repo below into this
+# directory (and keeps .gitignore in step); `mani run <task> --all` runs a task
+# across them. https://manicli.com
+#
+# Projects are listed in dependency order — syntax -> classifier ->
+# {sanitizer, dns} — so a sequential `mani run` builds and releases in the
+# order the packages depend on each other.
+
+sync_gitignore: true
+
+specs:
+  table:
+    output: table
+    parallel: true
+    ignore_errors: true
+  sequential:
+    output: stream
+    parallel: false
+
+targets:
+  packages:
+    tags: [package]
+
+projects:
+  meta:
+    path: .
+    desc: Workspace, shared CI, Claude plugin marketplace, and docs site
+    tags: [meta]
+
+  validator-syntax:
+    url: git@github.com:email-utils/validator-syntax.git
+    desc: Is the address well-formed? Parser, presets, TLD set
+    tags: [package]
+
+  classifier:
+    url: git@github.com:email-utils/classifier.git
+    desc: What is the address? Provider registry, disposable, role, typo
+    tags: [package]
+
+  sanitizer:
+    url: git@github.com:email-utils/sanitizer.git
+    desc: What is its canonical form? Provider-aware normalization
+    tags: [package]
+
+  validator-dns:
+    url: git@github.com:email-utils/validator-dns.git
+    desc: Can the domain receive mail? MX, Null MX, signals
+    tags: [package]
+
+  # Cloned beside the others rather than at `.github/`, which is meta's own
+  # workflows directory.
+  org-github:
+    path: org-github
+    url: git@github.com:email-utils/.github.git
+    desc: Organization-wide community health files
+    tags: [org]
+
+tasks:
+  status:
+    desc: Branch and working-tree status
+    spec: table
+    target: { all: true }
+    cmd: git status --short --branch | head -n 1
+
+  pull:
+    desc: Fast-forward the current branch
+    spec: table
+    target: { all: true }
+    cmd: git pull --ff-only
+
+  install:
+    desc: Clean install of dependencies
+    spec: sequential
+    target: packages
+    cmd: npm ci
+
+  check:
+    desc: Everything CI gates on — lint, format, typecheck, tests with coverage, build, package checks
+    spec: sequential
+    target: packages
+    cmd: |
+      npm run pre-commit &&
+      npm run test:coverage &&
+      npm run build &&
+      npm run check:package
+
+  # Every package lives at <workspace>/<name> and mani runs tasks from the
+  # project directory, so ../templates is always meta's templates/.
+  sync-config:
+    desc: Copy meta's shared config templates into every package
+    spec: sequential
+    target: packages
+    cmd: cp -R ../templates/synced/. .
+
+  check-config:
+    desc: Fail when a package's shared config differs from meta's templates
+    spec: table
+    target: packages
+    cmd: |
+      status=0
+      for f in $(cd ../templates/synced && find . -type f | sort); do
+        cmp -s "../templates/synced/$f" "$f" || { echo "drift: ${f#./}"; status=1; }
+      done
+      [ "$status" -eq 0 ] && echo "in sync"
+      exit "$status"
