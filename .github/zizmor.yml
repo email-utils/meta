@@ -1,0 +1,17 @@
+rules:
+  # The package callers in templates/synced pin meta by a commit on main, and
+  # meta has no tags to point at. zizmor matches entries by filename only, so
+  # these also cover meta's own pr-gate.yml and pr-title.yml, whose other pins
+  # are all release tags.
+  stale-action-refs:
+    ignore:
+      - pr-gate.yml
+      - pr-title.yml
+  # Meta's own workflows check out meta before any `./` reference, so `./` is
+  # the same commit `$/` would be. act can't parse `$/` yet, and `./` keeps
+  # these workflows runnable locally with .actrc.
+  # https://github.com/nektos/act/issues/6189
+  self-repository:
+    ignore:
+      - drift.yml
+      - pr-gate.yml

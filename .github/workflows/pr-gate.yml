@@ -1,0 +1,92 @@
+name: PR gate
+
+# Meta's own checks, reported as `pr-title / pr-title` and one check per lint
+# leg. The packages don't call this; theirs are checks.yml, test.yml, and
+# pr-title.yml. Meta's legs take seconds, so the title check shares this
+# workflow, and every leg reruns when a PR is retitled or relabelled.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # The reusable workflow the packages call, at this PR's own commit.
+  pr-title:
+    permissions:
+      contents: read # check out meta's conventions file
+      pull-requests: read # read the PR's title and labels
+    uses: ./.github/workflows/pr-title.yml
+
+  lint:
+    # Without it, each leg reports as `lint (<name>)`.
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read # check out meta
+    strategy:
+      # A cancelled leg reports cancelled, which a required check reads as
+      # unsatisfied, so one failure mustn't cancel the others.
+      fail-fast: false
+      matrix:
+        include:
+          # Meta's workflows and the package callers in templates/synced.
+          - name: actionlint
+            label: actionlint
+            script: lint:actionlint
+          # Workflows and composite actions, including the online audits
+          # that check each pinned SHA against the tag it claims.
+          - name: zizmor
+            label: zizmor
+            script: lint:zizmor
+          # The summarize scripts and check-config.sh, which actionlint
+          # doesn't reach.
+          - name: shellcheck
+            label: ShellCheck
+            script: lint:shellcheck
+          - name: format
+            label: Format
+            script: format:check
+    steps:
+      - name: Check out meta
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Meta runs on the packages' Node.
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: templates/synced/.nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Each leg is a package.json script, so `npm run` locally runs the same
+      # check. The linters are Docker images pinned by digest.
+      - name: Run ${{ matrix.name }}
+        id: run
+        env:
+          SCRIPT: ${{ matrix.script }}
+          # Read-only. Only lint:zizmor passes it into its container.
+          GH_TOKEN: ${{ github.token }}
+        run: npm run "$SCRIPT" 2>&1 | tee "$RUNNER_TEMP/output.log"
+
+      - name: Write job summary
+        if: always()
+        uses: ./.github/actions/job-summary
+        with:
+          check-name: ${{ matrix.label }}
+          outcome: ${{ steps.run.outcome }}
+          log-file: ${{ runner.temp }}/output.log

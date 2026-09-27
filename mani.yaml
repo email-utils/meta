@@ -96,10 +96,4 @@ tasks:
     desc: Fail when a package's shared config differs from meta's templates
     spec: table
     target: packages
-    cmd: |
-      status=0
-      for f in $(cd ../templates/synced && find . -type f | sort); do
-        cmp -s "../templates/synced/$f" "$f" || { echo "drift: ${f#./}"; status=1; }
-      done
-      [ "$status" -eq 0 ] && echo "in sync"
-      exit "$status"
+    cmd: bash ../templates/check-config.sh

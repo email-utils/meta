@@ -1,0 +1,17 @@
+# actionlint 1.7.12 predates three features the workflows use. Each entry
+# below is scoped to its message and goes once a release supports it.
+self-hosted-runner:
+  # Not self-hosted: GitHub's ubuntu-26.04 image, which actionlint doesn't
+  # know yet. https://github.com/rhysd/actionlint/issues/682
+  labels:
+    - ubuntu-26.04
+
+paths:
+  .github/workflows/*.yml:
+    ignore:
+      # `uses: $/…`, meta's own actions at the calling workflow's commit.
+      # https://github.com/rhysd/actionlint/issues/711
+      - 'specifying action "\$/[^"]+" in invalid format'
+      # `job.workflow_repository` and `job.workflow_sha`.
+      # https://github.com/rhysd/actionlint/pull/707
+      - 'property "workflow_(repository|sha)" is not defined'
