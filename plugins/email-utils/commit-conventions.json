@@ -1,0 +1,101 @@
+{
+  "$comment": "Conventional-commit types and scopes for every email-utils repo. The PR-title check and the Claude skills both read this file, so change them here and nowhere else. `bump` is the release that release-please cuts for a type. `changelog` is the CHANGELOG section it lands in; null means the type is hidden and never cuts a release on its own.",
+  "breaking": {
+    "bump": "major",
+    "description": "Add ! before the colon, as in feat(presets)!: remove the rfc5321 alias. The PR title becomes the squash commit, so the ! goes in the title."
+  },
+  "types": {
+    "feat": {
+      "description": "A new feature or public API addition",
+      "bump": "minor",
+      "changelog": "Features"
+    },
+    "fix": {
+      "description": "A bug fix. Also used for vendored-data refreshes and runtime dependency bumps, so they ship",
+      "bump": "patch",
+      "changelog": "Bug Fixes"
+    },
+    "perf": {
+      "description": "Faster or smaller, with no change in behavior",
+      "bump": "patch",
+      "changelog": "Performance Improvements"
+    },
+    "revert": {
+      "description": "Reverts an earlier commit; quote its title in the description",
+      "bump": "patch",
+      "changelog": "Reverts"
+    },
+    "docs": {
+      "description": "Documentation only: READMEs, TSDoc, and the docs site",
+      "bump": "none",
+      "changelog": null
+    },
+    "style": {
+      "description": "Formatting only, with no change in behavior",
+      "bump": "none",
+      "changelog": null
+    },
+    "refactor": {
+      "description": "A code change that neither fixes a bug nor adds a feature",
+      "bump": "none",
+      "changelog": null
+    },
+    "test": {
+      "description": "Adds or corrects tests, fixtures, or benchmarks",
+      "bump": "none",
+      "changelog": null
+    },
+    "build": {
+      "description": "Build tooling that doesn't change the published package. Use fix when it does",
+      "bump": "none",
+      "changelog": null
+    },
+    "ci": {
+      "description": "CI workflows and actions",
+      "bump": "none",
+      "changelog": null
+    },
+    "chore": {
+      "description": "Anything else that doesn't ship: repo settings, synced config, dev dependencies",
+      "bump": "none",
+      "changelog": null
+    }
+  },
+  "scopes": {
+    "shared": {
+      "deps": "Runtime dependency bumps, including @email-utils/* in dependents",
+      "deps-dev": "Dev dependency bumps",
+      "config": "Shared config synced from meta's templates"
+    },
+    "repos": {
+      "meta": {
+        "actions": "Composite actions in .github/actions",
+        "workflows": "Reusable workflows and meta's own CI",
+        "templates": "Shared package config in templates/",
+        "plugin": "The Claude plugin, its skills, and this file",
+        "site": "The VitePress docs site build and deploy",
+        "mani": "The mani workspace"
+      },
+      "validator-syntax": {
+        "parser": "parseAddress and the grammar behind it",
+        "presets": "The practical, rfc5321, rfc5322, and html5 presets and their overrides",
+        "data": "The vendored TLD set"
+      },
+      "classifier": {
+        "providers": "The provider registry and the /providers entry",
+        "disposable": "isDisposable and the /disposable entry",
+        "role": "Role-address detection",
+        "typo": "Typo suggestions from suggestCorrection",
+        "data": "The vendored disposable-domain list"
+      },
+      "sanitizer": {
+        "providers": "Provider-specific normalization rules"
+      },
+      "validator-dns": {
+        "resolver": "DNS lookups, the pluggable resolver, and timeouts",
+        "cache": "The TTL cache and in-flight dedupe",
+        "scoring": "Signals and opt-in weighted scoring"
+      }
+    }
+  }
+}
