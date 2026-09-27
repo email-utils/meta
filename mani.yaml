@@ -83,3 +83,23 @@ tasks:
       npm run test:coverage &&
       npm run build &&
       npm run check:package
+
+  # Every package lives at <workspace>/<name> and mani runs tasks from the
+  # project directory, so ../templates is always meta's templates/.
+  sync-config:
+    desc: Copy meta's shared config templates into every package
+    spec: sequential
+    target: packages
+    cmd: cp -R ../templates/synced/. .
+
+  check-config:
+    desc: Fail when a package's shared config differs from meta's templates
+    spec: table
+    target: packages
+    cmd: |
+      status=0
+      for f in $(cd ../templates/synced && find . -type f | sort); do
+        cmp -s "../templates/synced/$f" "$f" || { echo "drift: ${f#./}"; status=1; }
+      done
+      [ "$status" -eq 0 ] && echo "in sync"
+      exit "$status"

@@ -1,0 +1,66 @@
+{
+  "name": "@email-utils/__NAME__",
+  "version": "0.0.0",
+  "description": "__DESCRIPTION__",
+  "keywords": [
+    "email"
+  ],
+  "homepage": "https://email-utils.github.io/meta/",
+  "bugs": {
+    "url": "https://github.com/email-utils/__NAME__/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/email-utils/__NAME__.git"
+  },
+  "license": "MIT",
+  "author": "Marwynn Joynes",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.cts",
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --type-aware",
+    "lint:fix": "oxlint --type-aware --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "bench": "vitest bench --run",
+    "check:package": "publint && attw --pack .",
+    "pre-commit": "npm run lint && npm run format:check && npm run typecheck",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@types/node": "^24.0.0",
+    "@vitest/coverage-v8": "^5.0.2",
+    "lefthook": "^2.1.14",
+    "oxlint": "^1.85.0",
+    "oxlint-tsgolint": "^7.0.2003",
+    "prettier": "^3.9.9",
+    "publint": "^0.3.24",
+    "tsdown": "^0.23.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.2"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "allowScripts": {
+    "lefthook": true
+  }
+}
