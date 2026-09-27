@@ -1,0 +1,29 @@
+name: Audit comment
+description: >-
+  Reports `npm audit --json` output to the job summary and a marked PR
+  comment. The audit never fails the job, so it reports a [!WARNING]
+  rather than the pass/fail of job-summary and pr-comment.
+
+inputs:
+  results-file:
+    description: Path to the saved `npm audit --json` output
+    required: false
+    default: audit-results.json
+  pr-number:
+    description: Pull request number to comment on. Empty writes the job summary only
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Summarize and comment audit results
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        RESULTS_FILE: ${{ inputs.results-file }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+      with:
+        script: |
+          const report = require(`${process.env.ACTION_PATH}/audit-comment.cjs`);
+          await report({ github, context, core, env: process.env });
