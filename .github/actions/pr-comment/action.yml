@@ -1,0 +1,61 @@
+name: PR check comment
+description: >-
+  Posts or updates a single marked PR comment reporting a CI check's
+  pass/fail result.
+
+inputs:
+  check-name:
+    description: Human-readable check name for the comment heading, e.g. "Vitest"
+    required: true
+  marker-slug:
+    description: Lowercase slug for the comment's hidden marker, e.g. "vitest" -> <!-- ci-vitest -->
+    required: true
+  pr-number:
+    description: Pull request number to comment on. Empty skips the comment
+    required: true
+  outcome:
+    description: Outcome of the check step (e.g. steps.run.outcome). Anything other than 'success' is a failure
+    required: true
+  log-file:
+    description: Path to the check's captured output, read for the failure comment body
+    required: true
+  success-mode:
+    description: >-
+      Behavior on success. 'minimize' resolves a prior failure comment and
+      otherwise posts nothing (lint, format, typecheck). 'comment' always
+      posts or updates a passing comment (tests).
+    required: false
+    default: minimize
+  summary:
+    description: Short single-line markdown stat (e.g. "3 errors across 2 files"), rendered inline in the callout
+    required: false
+    default: ''
+  details:
+    description: Optional longer markdown block (e.g. a failing-test list or table), rendered between the callout and the log
+    required: false
+    default: ''
+  duration:
+    description: Pre-formatted job duration (e.g. "12s", "1m 34s")
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Comment on PR
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        CHECK_NAME: ${{ inputs.check-name }}
+        MARKER_SLUG: ${{ inputs.marker-slug }}
+        SUCCESS_MODE: ${{ inputs.success-mode }}
+        OUTCOME: ${{ inputs.outcome }}
+        LOG_FILE: ${{ inputs.log-file }}
+        SUMMARY: ${{ inputs.summary }}
+        DETAILS: ${{ inputs.details }}
+        DURATION: ${{ inputs.duration }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+      with:
+        script: |
+          const comment = require(`${process.env.ACTION_PATH}/comment.cjs`);
+          await comment({ github, context, core, env: process.env });
