@@ -1,0 +1,137 @@
+name: Checks
+
+# Lint, format, typecheck, build, package, and audit for a package repo, one
+# matrix leg each, reported as `checks / <name>`. Called from each package's
+# pr-gate.yml. The legs report through meta's composite actions, referenced
+# with `$/`, which resolves to meta at this workflow's own commit.
+on:
+  workflow_call:
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    # Without it, each leg reports as `checks / check (<name>)`.
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read # check out the package
+      pull-requests: write # pr-comment and audit-comment post to the PR
+    strategy:
+      # A cancelled leg reports cancelled, which a required check reads as
+      # unsatisfied, so one failure mustn't cancel the others.
+      fail-fast: false
+      matrix:
+        include:
+          - name: lint
+            label: Lint
+            command: npm run lint
+            summarize: lint
+            comment: minimize
+          - name: format
+            label: Format
+            command: npm run format:check
+            summarize: format
+            comment: minimize
+          - name: typecheck
+            label: Typecheck
+            command: npm run typecheck
+            summarize: typecheck
+            comment: minimize
+          # No PR comment: the check itself is the report.
+          - name: build
+            label: Build
+            command: npm run build
+            summarize: ''
+            comment: ''
+          # publint and attw read the built package, and their own output
+          # is the report, so no summarizer.
+          - name: package
+            label: Package
+            command: npm run build && npm run check:package
+            summarize: ''
+            comment: minimize
+          # Non-blocking and never a required check, hence `|| true`. It
+          # reports through audit-comment instead.
+          - name: audit
+            label: Dependency audit
+            command: npm audit --json > audit-results.json || true
+            summarize: ''
+            comment: ''
+    env:
+      # lefthook's install script would set up git hooks that never run here.
+      LEFTHOOK: 0
+    steps:
+      - name: Check out the package
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The audit reads only package-lock.json.
+      - name: Set up Node
+        if: matrix.name != 'audit'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        if: matrix.name != 'audit'
+        run: npm ci
+
+      # Through `bash -c` so the leg's `&&`, `>` and `|| true` stay inside
+      # it, with tee capturing all of its output.
+      - name: Run ${{ matrix.name }}
+        id: run
+        env:
+          COMMAND: ${{ matrix.command }}
+        run: bash -c "$COMMAND" 2>&1 | tee "$RUNNER_TEMP/output.log"
+
+      # Regardless of outcome: a passing lint can still carry warnings.
+      - name: Summarize output
+        id: summarize
+        if: always() && matrix.summarize != ''
+        uses: $/.github/actions/summarize
+        with:
+          check: ${{ matrix.summarize }}
+          log-file: ${{ runner.temp }}/output.log
+
+      # Not for the audit: "passed" above a table of vulnerabilities would
+      # mislead, so audit-comment writes its own.
+      - name: Write job summary
+        if: always() && matrix.name != 'audit'
+        uses: $/.github/actions/job-summary
+        with:
+          check-name: ${{ matrix.label }}
+          outcome: ${{ steps.run.outcome }}
+          log-file: ${{ runner.temp }}/output.log
+          summary: ${{ steps.summarize.outputs.summary }}
+          details: ${{ steps.summarize.outputs.details }}
+
+      # !cancelled(), not always(): pr-comment reads a cancelled run as a
+      # failure, and a newer push cancels this one. Off a PR, pr-number is
+      # empty and the action posts nothing.
+      - name: Comment on PR
+        if: ${{ !cancelled() && matrix.comment != '' }}
+        uses: $/.github/actions/pr-comment
+        with:
+          check-name: ${{ matrix.label }}
+          marker-slug: ${{ matrix.name }}
+          pr-number: ${{ github.event.pull_request.number }}
+          outcome: ${{ steps.run.outcome }}
+          log-file: ${{ runner.temp }}/output.log
+          success-mode: ${{ matrix.comment }}
+          summary: ${{ steps.summarize.outputs.summary }}
+          details: ${{ steps.summarize.outputs.details }}
+
+      - name: Report audit results
+        if: ${{ !cancelled() && matrix.name == 'audit' }}
+        uses: $/.github/actions/audit-comment
+        with:
+          results-file: audit-results.json
+          pr-number: ${{ github.event.pull_request.number }}
