@@ -1,0 +1,92 @@
+name: Test
+
+# The Vitest suite with coverage for a package repo, reported as
+# `test / vitest`, with a job summary, a PR comment on every run, and the
+# coverage report as an artifact. Called from each package's pr-gate.yml.
+# `$/` resolves to meta at this workflow's own commit.
+on:
+  workflow_call:
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  vitest:
+    name: vitest
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read # check out the package
+      pull-requests: write # pr-comment posts to the PR
+    env:
+      # lefthook's install script would set up git hooks that never run here.
+      LEFTHOOK: 0
+    steps:
+      - name: Check out the package
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Coverage thresholds fail this step the same way a failing test does.
+      # The package's vitest config sends the json reporter's output to
+      # .reports/vitest/results.json, where summarize looks by default.
+      - name: Run vitest
+        id: run
+        run: npm run test:coverage -- --reporter=default --reporter=json 2>&1 | tee "$RUNNER_TEMP/output.log"
+
+      - name: Summarize output
+        id: summarize
+        if: always()
+        uses: $/.github/actions/summarize
+        with:
+          check: vitest
+
+      # On every run, not just failures. Vitest writes no coverage when a
+      # test fails, hence `ignore`. The report lives under a dot-directory,
+      # which upload-artifact skips unless told otherwise.
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage
+          path: .reports/coverage/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Write job summary
+        if: always()
+        uses: $/.github/actions/job-summary
+        with:
+          check-name: Vitest
+          outcome: ${{ steps.run.outcome }}
+          log-file: ${{ runner.temp }}/output.log
+          summary: ${{ steps.summarize.outputs.summary }}
+          details: ${{ steps.summarize.outputs.details }}
+
+      # !cancelled(), not always(): pr-comment reads a cancelled run as a
+      # failure, and a newer push cancels this one.
+      - name: Comment on PR
+        if: ${{ !cancelled() }}
+        uses: $/.github/actions/pr-comment
+        with:
+          check-name: Vitest
+          marker-slug: vitest
+          pr-number: ${{ github.event.pull_request.number }}
+          outcome: ${{ steps.run.outcome }}
+          log-file: ${{ runner.temp }}/output.log
+          success-mode: comment
+          summary: ${{ steps.summarize.outputs.summary }}
+          details: ${{ steps.summarize.outputs.details }}
