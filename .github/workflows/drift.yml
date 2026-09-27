@@ -1,0 +1,72 @@
+name: Config drift
+
+# Compares each package's main with templates/synced, one leg per package.
+# Drift is expected while a template change waits on its sync PRs, so this
+# reports rather than gates: daily, whenever the templates change, and on
+# demand.
+on:
+  schedule:
+    - cron: '23 6 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - templates/synced/**
+      - templates/check-config.sh
+  pull_request:
+    branches: [main]
+    paths:
+      - templates/synced/**
+      - templates/check-config.sh
+      - .github/workflows/drift.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  drift:
+    name: ${{ matrix.package }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read # check out meta and the package
+    strategy:
+      fail-fast: false
+      matrix:
+        # The projects tagged `package` in mani.yaml.
+        package: [validator-syntax, classifier, sanitizer, validator-dns]
+    steps:
+      - name: Check out meta
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out ${{ matrix.package }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: email-utils/${{ matrix.package }}
+          path: packages/${{ matrix.package }}
+          persist-credentials: false
+
+      - name: Compare with templates/synced
+        id: run
+        env:
+          PACKAGE: ${{ matrix.package }}
+        run: bash templates/check-config.sh "packages/$PACKAGE" 2>&1 | tee "$RUNNER_TEMP/output.log"
+
+      - name: Write job summary
+        if: always()
+        uses: ./.github/actions/job-summary
+        with:
+          check-name: Config drift (${{ matrix.package }})
+          outcome: ${{ steps.run.outcome }}
+          log-file: ${{ runner.temp }}/output.log
+          details: >-
+            ${{ steps.run.outcome == 'failure' && 'To fix it, run `mani run sync-config` from the workspace and open a PR in each package it changes. To keep the package''s version instead, change `templates/synced` to match first.' || '' }}

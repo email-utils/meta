@@ -1,0 +1,6 @@
+# Local runs of meta's own workflows with https://github.com/nektos/act, e.g.
+#   act pull_request -W .github/workflows/pr-gate.yml -j lint
+# act's Ubuntu image stands in for GitHub's ubuntu-26.04 runner.
+-P ubuntu-26.04=catthehacker/ubuntu:act-latest
+# Reuse the local image instead of pulling several GB on every run.
+--pull=false

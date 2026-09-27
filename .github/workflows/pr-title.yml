@@ -3,8 +3,9 @@ name: PR title
 # Checks that a PR's title is a conventional commit, using the types and
 # scopes in meta's commit-conventions.json for the calling repo. The title
 # becomes the squash commit, which release-please reads to pick the next
-# version. Called from each repo's own pr-title.yml, which also runs on
-# `edited` so a retitled PR is rechecked without rerunning the other checks.
+# version. Called from each package's pr-title.yml, which also runs on
+# `edited` so a retitled PR is rechecked without rerunning the other checks,
+# and from meta's own pr-gate.yml.
 on:
   workflow_call:
 

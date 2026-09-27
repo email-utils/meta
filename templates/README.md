@@ -11,6 +11,8 @@ mani run sync-config     # copy synced/ into every package
 mani run check-config    # fail on any package whose copy has drifted
 ```
 
+`check-config` runs [`check-config.sh`](check-config.sh). So does meta's **Config drift** workflow, which checks each package's `main` daily and on any meta PR that changes `synced/`. On a template PR, that check stays red until every package has merged its sync PR, so rerun it once they have. It isn't a required check.
+
 | File                                            | Purpose                                                                                                  |
 | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `.prettierrc`, `.prettierignore`                | Prettier 3: `semi: true`, `singleQuote: true`, `trailingComma: all`, `endOfLine: lf`                     |
