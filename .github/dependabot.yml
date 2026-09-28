@@ -1,0 +1,33 @@
+version: 2
+updates:
+  # Meta's workflows and composite actions, and the package workflows in
+  # templates/synced, which reach the packages through a sync.
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/*
+      - /templates/synced
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      actions:
+        patterns:
+          - '*'
+    ignore:
+      # The package callers pin meta by hand, to a commit on main.
+      - dependency-name: email-utils/meta
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+      include: scope
