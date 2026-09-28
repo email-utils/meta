@@ -1,6 +1,6 @@
 ---
 name: pr
-description: Open a pull request for the current email-utils branch. Runs the checks CI gates on, drafts a conventional-commit title from meta's commit-conventions.json and explains the version bump it causes, warns when the public API report disagrees with the title, fills the PR template with a `Closes` line, then commits, pushes, opens the PR, moves it to In review on the project board, and offers auto-merge.
+description: Open a pull request for the current email-utils branch. Runs the checks CI gates on, drafts a conventional-commit title from meta's commit-conventions.json and explains the version bump it causes, warns when the public API report disagrees with the title, fills the PR template with a `Closes` line, then commits, pushes, opens the PR, and moves it to In review on the project board. It never merges the PR or turns on auto-merge.
 argument-hint: '[title]'
 disable-model-invocation: true
 allowed-tools: Read, Bash(git rev-parse --show-toplevel), Bash(git remote get-url origin), Bash(git branch --show-current), Bash(git status --porcelain), Bash(git fetch origin main), Bash(git log --oneline origin/main..HEAD), Bash(git diff --stat origin/main), Bash(gh api user --jq .login)
@@ -12,7 +12,7 @@ Every email-utils repo merges by squash, and the squash commit takes the PR's
 title and body. The title is a conventional commit that release-please reads
 to pick the next version, and the body's `Closes` lines close the issue. So
 this skill spends most of its care on those two, then does the outward-facing
-steps (commit, push, open, board, auto-merge) only after the person approves.
+steps (commit, push, open, board) only after the person approves.
 
 Work only with the person's own sessions. Never run `gh auth token` or
 `gh auth status --show-token`, and never read `~/.config/gh`, `~/.ssh`, or
@@ -23,6 +23,10 @@ skill checks all of this.
 Don't add tool attribution to anything this skill writes: no
 `Co-Authored-By` trailer and no "Generated with" line in the commit or the PR
 body.
+
+Never merge the PR or turn on auto-merge, and don't offer or ask about
+either. Merging is the person's call once they've reviewed it, even when
+they ask to stop being asked about it.
 
 ## 1. Find the repo, branch, and issue
 
@@ -227,24 +231,11 @@ gh project item-edit --project-id PVT_kwDOBa9fQs4Bk3BH --id <item> \
 it can land after the move. Mention that the PR card may show Todo if it
 does.
 
-## 9. Offer auto-merge
-
-The repos allow auto-merge, and the `main` ruleset requires the PR gate's
-checks. Ask whether to turn it on. If yes:
-
-```sh
-gh pr merge --auto --squash <pr html_url>
-```
-
-The squash commit uses the PR's title and body. Don't wait on CI or poll
-checks; GitHub merges once the required checks pass. If they'd rather review
-first, leave it off.
-
-## 10. Report
+## 9. Report
 
 Say briefly: the PR link and its title, the version effect, whether the
 checks passed locally, where the issue and PR sit on the board (including any
-card to move by hand), and whether auto-merge is on. After the merge, the
-board moves the PR to Done ("Pull request merged") and each closed issue to
-Done ("Item closed"). The epic still needs moving to Done by hand once its
-last sub-issue closes.
+card to move by hand), and that the PR is waiting for them to review and
+merge. After the merge, the board moves the PR to Done ("Pull request
+merged") and each closed issue to Done ("Item closed"). The epic still needs
+moving to Done by hand once its last sub-issue closes.
