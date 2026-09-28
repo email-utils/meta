@@ -71,7 +71,7 @@ export interface SyntaxOptions {
   preset?: 'practical' | 'rfc5321' | 'rfc5322' | 'html5';
   /** Check the TLD against the IANA set. Default: on in `practical`, off elsewhere. */
   checkTld?: boolean;
-  /** Accept a domain with no dot (e.g. `localhost`). Default: off in every preset. */
+  /** Accept a domain with no dot (e.g. `localhost`). Default: on in `html5`, off elsewhere. */
   allowNoTld?: boolean;
   /**
    * Accept RFC 5322 comments, e.g. `ada(work)@example.com`. Default: on in
@@ -99,13 +99,30 @@ object on top (S1):
 | `rfc5322`   | The full grammar, quoted locals and comments included.                          |
 | `html5`     | Exactly the WHATWG `input[type=email]` regex, for parity with browser forms.    |
 
+Where the presets differ on 0.0.1's suite (the full table is in the corpus
+fixtures, validator-syntax#6):
+
+- **`practical`** allows only dot-atom local parts. It rejects quoted local
+  parts (`" "@example.org`, `just."quoted".atoms@example.com`) and the
+  `%` and `!` route characters (`user%relay.example@example.org`,
+  `relay!user@example.org`): all legal, never seen on real mailboxes.
+- **`rfc5321`** allows a Dot-string or a Quoted-string local part, never
+  both mixed, and caps the local part at 64 characters.
+- **`rfc5322`** also accepts dot-separated atoms and quoted strings mixed
+  (obs-local-part). Only RFC 5322's own limits apply, so there is no
+  64-character cap on the local part.
+- **`html5`** matches browsers exactly, so it accepts what they accept:
+  dotless domains (`admin@mailserver1`), consecutive dots in the local part
+  (`john..doe@example.com`), and local parts over 64 characters. The
+  254-character address cap still applies.
+
 ## Options
 
 | Option          | Type      | Default                    | Notes                                         |
 | --------------- | --------- | -------------------------- | --------------------------------------------- |
 | `preset`        | `string`  | `'practical'`              | Base rule set.                                |
 | `checkTld`      | `boolean` | `true` in `practical` only | Uses the bundled IANA TLD set (S3).           |
-| `allowNoTld`    | `boolean` | `false`                    | Replaces the 0.0.1 `localhost` flag (S4).     |
+| `allowNoTld`    | `boolean` | `true` in `html5` only     | Replaces the 0.0.1 `localhost` flag (S4).     |
 | `allowComments` | `boolean` | `true` in `rfc5322` only   | Comments go to `ParsedAddress.comments` (S5). |
 
 ## Reason codes
