@@ -100,8 +100,9 @@ the client, DNS on the server. (D7)
 - Platform-neutral builds (browser and Node), except validator-dns, which is
   Node-only. (scaffold)
 - Subpath entries exist only where they carry heavy tree-shakeable data:
-  `@email-utils/classifier/providers` and `@email-utils/classifier/disposable`.
-  Everything else lives at the root. (D10)
+  `@email-utils/classifier/providers` and `@email-utils/classifier/disposable`,
+  plus `@email-utils/validator-syntax/fixtures`, the test corpus that
+  dependents and the docs read. Everything else lives at the root. (D10)
 - No package ever writes to the console. (epic)
 
 ## Forward compatibility
@@ -161,4 +162,7 @@ merge.
 - **D10 — Subpath exports.** **(a) only classifier `/providers` and
   `/disposable` — recommended**: subpaths exist for heavy tree-shakeable
   data; presets and cache are tiny and belong at root; (b) a subpath per
-  commit scope in every package.
+  commit scope in every package. Amended for validator-syntax#7: syntax also
+  ships `/fixtures`, so dependents' consistency tests and the docs' support
+  matrix read the same corpus from npm. It's data kept off the root entry,
+  which fits (a)'s reasoning.
