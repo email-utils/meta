@@ -4,6 +4,9 @@ node_modules/
 # Personal Claude Code settings; shared ones go in .claude/settings.json.
 .claude/settings.local.json
 
+# Reports from `npm run eval`.
+plugins/email-utils/evals/results/
+
 # The package repos are cloned here by `mani sync`, which owns this block.
 # mani #
 org-github
