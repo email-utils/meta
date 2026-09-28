@@ -4,12 +4,13 @@ Shared by every email-utils repo's workflows. Each action keeps its scripts in
 its own directory and finds them through `github.action_path`, so it works
 when called from another repo.
 
-| Action          | What it does                                                                                                                 |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `summarize`     | Turns lint, format, typecheck, or vitest output into a one-line `summary` and a `details` block                              |
-| `job-summary`   | Writes a pass/fail section to the job summary, with the log's last 100 lines on failure                                      |
-| `pr-comment`    | Keeps one PR comment per check, updated in place. On success, `minimize` resolves an earlier failure; `comment` always posts |
-| `audit-comment` | Reports `npm audit --json` output as a non-blocking warning, to the job summary and a PR comment                             |
+| Action           | What it does                                                                                                                 |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `summarize`      | Turns lint, format, typecheck, or vitest output into a one-line `summary` and a `details` block                              |
+| `job-summary`    | Writes a pass/fail section to the job summary, with the log's last 100 lines on failure                                      |
+| `pr-comment`     | Keeps one PR comment per check, updated in place. On success, `minimize` resolves an earlier failure; `comment` always posts |
+| `audit-comment`  | Reports `npm audit --json` output as a non-blocking warning, to the job summary and a PR comment                             |
+| `repository-url` | Fails when `package.json`'s `repository.url` isn't the running repo's, which npm's provenance requires                       |
 
 ## Calling them
 

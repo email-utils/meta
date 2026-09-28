@@ -84,6 +84,11 @@ jobs:
         if: matrix.name != 'audit'
         run: npm ci
 
+      # With the package leg, whose job is what gets published.
+      - name: Check repository.url
+        if: matrix.name == 'package'
+        uses: $/.github/actions/repository-url
+
       # Through `bash -c` so the leg's `&&`, `>` and `|| true` stay inside
       # it, with tee capturing all of its output.
       - name: Run ${{ matrix.name }}
