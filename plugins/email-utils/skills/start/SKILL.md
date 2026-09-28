@@ -1,6 +1,6 @@
 ---
 name: start
-description: Start work on an email-utils issue. Syncs `main` in the right repo, creates a `<type>/<issue#>-<slug>` branch named from the issue, assigns the issue to the person, and moves it and its epic to In progress on the project board. Use it whenever someone says they're starting, picking up, or working on an issue (`#34`, `validator-dns#13`, or an issue URL), asks for a branch for an issue, or asks what to name one.
+description: Start work on an email-utils issue. Syncs `main` in the right repo, creates a `<type>/<issue#>-<slug>` branch named from the issue, assigns the issue to the person, moves it and its epic to In progress on the project board, then starts the work the issue describes. Use it whenever someone says they're starting, picking up, or working on an issue (`#34`, `validator-dns#13`, or an issue URL), asks for a branch for an issue, or asks what to name one.
 argument-hint: '[repo#]issue'
 allowed-tools: Read, Bash(git rev-parse --show-toplevel), Bash(git remote get-url origin), Bash(git branch --show-current), Bash(git status --porcelain), Bash(gh api user --jq .login)
 ---
@@ -9,8 +9,9 @@ allowed-tools: Read, Bash(git rev-parse --show-toplevel), Bash(git remote get-ur
 
 Every email-utils repo works trunk-based: one short-lived branch per piece of
 work, cut from an up-to-date `main`, merged back by squash PR. This skill sets
-that branch up and puts the issue on the board as In progress. It doesn't
-push, commit, or open a PR; the `pr` skill does that.
+that branch up, puts the issue on the board as In progress, and then starts
+on the issue itself. It doesn't commit, push, or open a PR; the `pr` skill
+does that.
 
 Work only with the person's own sessions. Never run `gh auth token` or
 `gh auth status --show-token`, and never read `~/.config/gh`, `~/.ssh`, or
@@ -203,6 +204,31 @@ the work was done before.
 Say briefly: the branch they're on and that it came from an up-to-date
 `main`, the issue link, whether they're assigned, and where the issue and
 epic now sit on the board, including any card they need to move by hand.
-Remind them the PR title will need the same type (with the repo's scope from
-`commit-conventions.json`) and a `Closes #<n>` line, which the `pr` skill
-handles.
+Then go straight on to the work; setting up isn't the finish line.
+
+## 8. Start the work
+
+Read what the issue needs before changing anything:
+
+- The issue body and its comments:
+  `gh api repos/email-utils/<repo>/issues/<n>/comments --jq '.[] | {user: .user.login, body}'`.
+- The epic's body, if it has one, for the wider goal and conventions.
+- Any issues or PRs it links, and earlier PRs for sibling issues in the same
+  epic. Those show the house style for this kind of change.
+- The code, config, or docs it touches, in this repo and in meta
+  (`templates/`, `plugins/email-utils/`, `.github/`) when it builds on them.
+
+Then do the work, matching the style of the files around it. When the issue
+leaves a real decision open (a choice between approaches, a name the public
+will see, anything that changes scope), ask before building on a guess.
+Anything the code already answers, decide yourself.
+
+Run the checks that cover what changed before calling it done: `npm run
+pre-commit` and `npm run test:coverage` in a package, or `npm run lint` and
+`npm run format:check` in meta.
+
+Leave the changes uncommitted for them to review. Finish by summing up what
+changed, what was checked, and anything left open. Tell them that once
+they're happy with it, the `pr` skill commits it, opens the PR with a
+`<type>(<scope>): …` title and a `Closes #<n>` line, and moves the card to
+In review.
