@@ -54,6 +54,12 @@ jobs:
           - name: shellcheck
             label: ShellCheck
             script: lint:shellcheck
+          # The marketplace catalog and the plugin's manifest and skills.
+          # Not --strict: the plugin leaves out `version` on purpose, so
+          # users track commits, and the validator warns about that.
+          - name: plugin
+            label: Plugin
+            script: lint:plugin
           - name: format
             label: Format
             script: format:check

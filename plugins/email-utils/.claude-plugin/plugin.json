@@ -1,0 +1,10 @@
+{
+  "name": "email-utils",
+  "description": "Skills for the email-utils branch, PR, and release flow",
+  "author": {
+    "name": "Marwynn Joynes"
+  },
+  "homepage": "https://github.com/email-utils/meta",
+  "repository": "https://github.com/email-utils/meta",
+  "license": "MIT"
+}
