@@ -8,6 +8,7 @@
   "scripts": {
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "eval": "claude plugin eval plugins/email-utils --model claude-sonnet-5 --judge-model claude-haiku-4-5 --threshold 0.8 --max-cost-usd 10 -j 4",
     "lint": "npm run lint:actionlint && npm run lint:zizmor && npm run lint:shellcheck && npm run lint:plugin",
     "lint:actionlint": "docker run --rm -v \"$PWD:/repo\" -w /repo rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 .github/workflows/*.yml templates/synced/.github/workflows/*.yml",
     "lint:zizmor": "docker run --rm -e GH_TOKEN -v \"$PWD:/repo\" -w /repo ghcr.io/zizmorcore/zizmor:1.30.1@sha256:a2eb396d886c053073405c7a980f2139ba2248ec172243cfa3841e57196e8101 --persona=pedantic .",
