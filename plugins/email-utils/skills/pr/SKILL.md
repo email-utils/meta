@@ -1,6 +1,6 @@
 ---
 name: pr
-description: Open a pull request for the current email-utils branch. Runs the checks CI gates on, drafts a conventional-commit title from meta's commit-conventions.json and explains the version bump it causes, warns when the public API report disagrees with the title, fills the PR template with a `Closes` line, then commits, pushes, opens the PR, moves it and its issue to In review on the project board, and offers auto-merge.
+description: Open a pull request for the current email-utils branch. Runs the checks CI gates on, drafts a conventional-commit title from meta's commit-conventions.json and explains the version bump it causes, warns when the public API report disagrees with the title, fills the PR template with a `Closes` line, then commits, pushes, opens the PR, moves it to In review on the project board, and offers auto-merge.
 argument-hint: '[title]'
 disable-model-invocation: true
 allowed-tools: Read, Bash(git rev-parse --show-toplevel), Bash(git remote get-url origin), Bash(git branch --show-current), Bash(git status --porcelain), Bash(git fetch origin main), Bash(git log --oneline origin/main..HEAD), Bash(git diff --stat origin/main), Bash(gh api user --jq .login)
@@ -170,7 +170,7 @@ what happens next:
    message. In a package, lefthook reruns the pre-commit checks.
 2. Push the branch: `git push -u origin HEAD`.
 3. Open the PR against `main`.
-4. Move the issue and the PR to In review on the board.
+4. Move the PR to In review on the board. The board moves the issue itself.
 
 Ask once for all of it, and let them edit the title or body first. Don't
 commit, push, or open anything without a yes.
@@ -195,10 +195,13 @@ gh api -X POST repos/email-utils/<repo>/pulls \
 If the push is rejected because the remote branch moved, stop and report
 it. Don't force-push unless they ask.
 
-## 8. Move the cards to In review
+## 8. Move the PR to In review
 
-The "email-utils v1.0" board is org project 1. Its built-in workflows are
-off, so nothing moves on its own.
+The "email-utils v1.0" board is org project 1. Its built-in workflows move
+the issue: once the PR's `Closes` line links it, "Pull request linked to
+issue" sets it to In review. A `Part of` line doesn't link it, so it stays
+In progress. Leave the epic alone; it's In progress until every sub-issue is
+done. Only the PR's own card needs moving.
 
 | What         | ID                               |
 | ------------ | -------------------------------- |
@@ -211,7 +214,8 @@ is easy to trip and slow to clear. Make each call below once. If one fails,
 don't retry or loop: tell them which card to move by hand and carry on.
 
 Add the PR to the board, and move it to In review with the ID that comes
-back:
+back. In meta, "Auto-add to project" may have added it already; `item-add`
+then returns the existing card:
 
 ```sh
 gh project item-add 1 --owner email-utils --url <pr html_url> --format json --jq .id
@@ -219,10 +223,9 @@ gh project item-edit --project-id PVT_kwDOBa9fQs4Bk3BH --id <item> \
   --field-id PVTSSF_lADOBa9fQs4Bk3BHzhjmBI0 --single-select-option-id 8ba11c94
 ```
 
-For each issue the PR closes, find its card with the same lookup the `start`
-skill uses and move it to In review. An issue the PR is only `Part of` stays
-In progress. Leave the epic alone; it's In progress until every sub-issue is
-done.
+"Item added to project" sets new cards to Todo and runs on its own time, so
+it can land after the move. Mention that the PR card may show Todo if it
+does.
 
 ## 9. Offer auto-merge
 
@@ -242,4 +245,6 @@ first, leave it off.
 Say briefly: the PR link and its title, the version effect, whether the
 checks passed locally, where the issue and PR sit on the board (including any
 card to move by hand), and whether auto-merge is on. After the merge, the
-issue and PR go to Done; nothing moves them automatically.
+board moves the PR to Done ("Pull request merged") and each closed issue to
+Done ("Item closed"). The epic still needs moving to Done by hand once its
+last sub-issue closes.
