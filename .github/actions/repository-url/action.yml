@@ -1,0 +1,30 @@
+name: Repository URL
+description: >-
+  Fails when package.json's repository.url doesn't point at the repo the
+  workflow runs in. npm rejects a provenance publish on a mismatch, so this
+  catches it at PR time rather than mid-release.
+
+inputs:
+  package-dir:
+    description: Directory holding the package.json to check
+    required: false
+    default: .
+
+runs:
+  using: composite
+  steps:
+    - name: Check repository.url
+      shell: bash
+      working-directory: ${{ inputs.package-dir }}
+      env:
+        REPOSITORY: ${{ github.repository }}
+      run: |
+        # A string `repository` is npm's shorthand, which provenance doesn't
+        # accept, so only the object form passes.
+        url=$(node -p 'require("./package.json").repository?.url ?? ""')
+        expected="git+https://github.com/$REPOSITORY.git"
+        if [ "$url" != "$expected" ]; then
+          echo "::error file=package.json::repository.url is '$url'. Set it to '$expected' so npm accepts the provenance."
+          exit 1
+        fi
+        echo "repository.url matches $REPOSITORY"
