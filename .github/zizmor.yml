@@ -1,13 +1,14 @@
 rules:
   # The package workflows in templates/synced pin meta by a commit on main, and
   # meta has no tags to point at. zizmor matches entries by filename only, so
-  # these also cover meta's own pr-gate.yml and pr-title.yml, whose other pins
-  # are all release tags.
+  # these also cover meta's own pr-gate.yml, pr-title.yml, and release.yml,
+  # whose other pins are all release tags.
   stale-action-refs:
     ignore:
       - nightly.yml
       - pr-gate.yml
       - pr-title.yml
+      - release.yml
   # Meta's own workflows check out meta before any `./` reference, so `./` is
   # the same commit `$/` would be. act can't parse `$/` yet, and `./` keeps
   # these workflows runnable locally with .actrc.
