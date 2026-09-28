@@ -8,12 +8,17 @@
   "scripts": {
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "npm run lint:actionlint && npm run lint:zizmor && npm run lint:shellcheck",
+    "lint": "npm run lint:actionlint && npm run lint:zizmor && npm run lint:shellcheck && npm run lint:plugin",
     "lint:actionlint": "docker run --rm -v \"$PWD:/repo\" -w /repo rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 .github/workflows/*.yml templates/synced/.github/workflows/*.yml",
     "lint:zizmor": "docker run --rm -e GH_TOKEN -v \"$PWD:/repo\" -w /repo ghcr.io/zizmorcore/zizmor:1.30.1@sha256:a2eb396d886c053073405c7a980f2139ba2248ec172243cfa3841e57196e8101 --persona=pedantic .",
-    "lint:shellcheck": "docker run --rm -v \"$PWD:/mnt\" koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d $(git ls-files '*.sh')"
+    "lint:shellcheck": "docker run --rm -v \"$PWD:/mnt\" koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d $(git ls-files '*.sh')",
+    "lint:plugin": "claude plugin validate . && claude plugin validate plugins/email-utils"
   },
   "devDependencies": {
+    "@anthropic-ai/claude-code": "^2.1.283",
     "prettier": "^3.9.9"
+  },
+  "allowScripts": {
+    "@anthropic-ai/claude-code": true
   }
 }

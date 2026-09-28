@@ -1,0 +1,14 @@
+{
+  "name": "email-utils",
+  "description": "Claude Code plugins for working on the @email-utils packages",
+  "owner": {
+    "name": "Marwynn Joynes"
+  },
+  "plugins": [
+    {
+      "name": "email-utils",
+      "source": "./plugins/email-utils",
+      "description": "Skills for the email-utils branch, PR, and release flow"
+    }
+  ]
+}

@@ -34,6 +34,7 @@ meta_checks=(
   actionlint
   zizmor
   shellcheck
+  plugin
   format
 )
 
