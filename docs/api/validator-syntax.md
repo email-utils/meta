@@ -49,11 +49,11 @@ export function createSyntaxValidator(options?: SyntaxOptions): {
 };
 
 export interface ParsedAddress {
-  /** The local part, without comments. */
+  /** The local part, without comments or folding whitespace. */
   local: string;
-  /** The domain, without comments. */
+  /** The domain, without comments or folding whitespace. */
   domain: string;
-  /** The last label; absent when the preset allows dotless domains and there is none. */
+  /** The last label; absent for a domain literal, or a dotless domain the preset allows. */
   tld?: string;
   /** Comments in input order; empty when there are none or they aren't allowed. */
   comments: AddressComment[];
@@ -62,8 +62,19 @@ export interface ParsedAddress {
 export interface AddressComment {
   /** The comment's text, without the parentheses. */
   text: string;
-  /** RFC 5322 allows comments only at the ends of the local part and the domain. */
-  position: 'before-local' | 'after-local' | 'before-domain' | 'after-domain';
+  /**
+   * Where the comment sat. RFC 5322's obsolete syntax also allows comments
+   * between the words of the local part and the labels of the domain
+   * (`test.(comment)test@example.com`): those are `inside-local` and
+   * `inside-domain`.
+   */
+  position:
+    | 'before-local'
+    | 'inside-local'
+    | 'after-local'
+    | 'before-domain'
+    | 'inside-domain'
+    | 'after-domain';
 }
 
 export interface SyntaxOptions {
@@ -99,22 +110,44 @@ object on top (S1):
 | `rfc5322`   | The full grammar, quoted locals and comments included.                          |
 | `html5`     | Exactly the WHATWG `input[type=email]` regex, for parity with browser forms.    |
 
-Where the presets differ on 0.0.1's suite (the full table is in the corpus
-fixtures, validator-syntax#6):
+Where the presets differ (the corpus behind this is published as
+`@email-utils/validator-syntax/fixtures`; see [Fixtures](#fixtures)):
 
 - **`practical`** allows only dot-atom local parts. It rejects quoted local
-  parts (`" "@example.org`, `just."quoted".atoms@example.com`) and the
+  parts (`" "@example.org`, `just."quoted".atoms@example.com`), the
   `%` and `!` route characters (`user%relay.example@example.org`,
-  `relay!user@example.org`): all legal, never seen on real mailboxes.
+  `relay!user@example.org`), and domain literals (`postmaster@[192.0.2.1]`):
+  all legal, never seen on real mailboxes.
 - **`rfc5321`** allows a Dot-string or a Quoted-string local part, never
-  both mixed, and caps the local part at 64 characters.
-- **`rfc5322`** also accepts dot-separated atoms and quoted strings mixed
-  (obs-local-part). Only RFC 5322's own limits apply, so there is no
-  64-character cap on the local part.
+  both mixed, and caps the local part at 64 characters. Its domain literals
+  are IPv4 (`[192.0.2.1]`) and IPv6 (`[IPv6:2001:db8::1]`) address
+  literals, IPv6 being the only registered tag, with no more than six
+  groups beside a `::`. Anything else in brackets fails with
+  `syntax.domain.literal_invalid`.
+- **`rfc5322`** follows RFC 5322's addr-spec, obsolete syntax included,
+  since RFC 5322 requires parsers to accept it:
+  - dot-separated atoms and quoted strings mixed (obs-local-part);
+  - comments and folding whitespace around every word and label, not just
+    at the ends of each part (`test . test@example.com`,
+    `test.(comment)test@example.com`), with a CRLF only when a space or tab
+    follows it;
+  - control characters other than NUL, CR, and LF in quoted strings and
+    comments, and any ASCII character after a backslash;
+  - any text in a domain literal (`[RFC-5322-domain-literal]`).
+
+  Only RFC 5322's own limits apply, so there is no 64-character cap on the
+  local part. A dotted domain is still required unless `allowNoTld` is on.
+
 - **`html5`** matches browsers exactly, so it accepts what they accept:
-  dotless domains (`admin@mailserver1`), consecutive dots in the local part
-  (`john..doe@example.com`), and local parts over 64 characters. The
-  254-character address cap still applies.
+  dotless domains (`admin@mailserver1`), leading, trailing, and consecutive
+  dots in the local part (`john..doe@example.com`), and local parts over 64
+  characters. The 254-character address cap still applies.
+
+Every preset caps a domain label at 63 characters and the address at 254;
+all but `html5` cap the domain at 253. Comments and folding whitespace don't
+count toward the caps. The first failure wins: the local part is checked
+before the domain, each left to right, then the lengths, then a dotless
+domain, then the TLD.
 
 ## Options
 
@@ -130,9 +163,37 @@ fixtures, validator-syntax#6):
 The `syntax.*` namespace in the [catalogue](./reason-codes.md#syntax):
 `syntax.address.*` (empty, no_at, too_long), `syntax.local.*` (empty,
 too_long, invalid_char, consecutive_dots, unquoted_space), `syntax.domain.*`
-(empty, no_dot, label_invalid, too_long, invalid_char), `syntax.comment.*`
+(empty, no_dot, label_invalid, literal_invalid, too_long, invalid_char),
+`syntax.comment.*`
 (not_allowed, unterminated), and `syntax.tld.unknown`. Failures carry
 `index` where a position exists.
+
+## Fixtures
+
+`@email-utils/validator-syntax/fixtures` publishes the corpus the package is
+tested against, so dependents can check they split and judge addresses the
+same way, and so these docs can build the support matrix. Each fixture has
+the address, a description, and the expected result under every preset
+(`ok`, or the `reason` and `index`). The sources are the 0.0.1 suite,
+Dominic Sayers' is_email tests (BSD-3, attributed in the package's
+`THIRD_PARTY_NOTICES.md`), and the examples from Wikipedia and RFC 3696
+with its erratum 246.
+
+```ts
+import {
+  syntaxFixtures,
+  supportMatrix,
+} from '@email-utils/validator-syntax/fixtures';
+
+for (const { address, expected } of syntaxFixtures) {
+  expected.practical; // { ok: true } | { ok: false, reason, index? }
+}
+
+supportMatrix(); // one row per feature: which presets accept it
+```
+
+The subpath is test and docs data. The fixture set may grow in any minor
+release; a changed expectation follows the package's own semver.
 
 ## Migrating from 0.0.1
 

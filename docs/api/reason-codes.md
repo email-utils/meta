@@ -14,24 +14,25 @@ part of the contract.
 Emitted by [`@email-utils/validator-syntax`](./validator-syntax.md). Where a
 position exists, the result's `index` points at the offending character.
 
-| Code                            | Meaning                                                             |
-| ------------------------------- | ------------------------------------------------------------------- |
-| `syntax.address.empty`          | The input is the empty string.                                      |
-| `syntax.address.no_at`          | No `@` separator in the address.                                    |
-| `syntax.address.too_long`       | The whole address exceeds 254 characters.                           |
-| `syntax.local.empty`            | Nothing before the `@`.                                             |
-| `syntax.local.too_long`         | The local part exceeds 64 characters.                               |
-| `syntax.local.invalid_char`     | A character the active preset does not allow in the local part.     |
-| `syntax.local.consecutive_dots` | `..` outside a quoted string.                                       |
-| `syntax.local.unquoted_space`   | A space outside a quoted string.                                    |
-| `syntax.domain.empty`           | Nothing after the `@`.                                              |
-| `syntax.domain.no_dot`          | No dot in the domain and the preset does not allow dotless domains. |
-| `syntax.domain.label_invalid`   | A domain label breaks the length or hyphen-placement rules.         |
-| `syntax.domain.too_long`        | The domain exceeds 253 characters.                                  |
-| `syntax.domain.invalid_char`    | A character the active preset does not allow in the domain.         |
-| `syntax.comment.not_allowed`    | A comment, and the options don't allow comments.                    |
-| `syntax.comment.unterminated`   | A `(` with no matching `)`.                                         |
-| `syntax.tld.unknown`            | The TLD is not in the IANA set (only when the TLD check is on).     |
+| Code                            | Meaning                                                                                |
+| ------------------------------- | -------------------------------------------------------------------------------------- |
+| `syntax.address.empty`          | The input is the empty string.                                                         |
+| `syntax.address.no_at`          | No `@` separator in the address.                                                       |
+| `syntax.address.too_long`       | The whole address exceeds 254 characters, not counting comments or folding whitespace. |
+| `syntax.local.empty`            | Nothing before the `@`.                                                                |
+| `syntax.local.too_long`         | The local part exceeds 64 characters.                                                  |
+| `syntax.local.invalid_char`     | A character the active preset does not allow in the local part.                        |
+| `syntax.local.consecutive_dots` | `..` outside a quoted string.                                                          |
+| `syntax.local.unquoted_space`   | A space outside a quoted string, where the preset doesn't allow one.                   |
+| `syntax.domain.empty`           | Nothing after the `@`.                                                                 |
+| `syntax.domain.no_dot`          | No dot in the domain and the preset does not allow dotless domains.                    |
+| `syntax.domain.label_invalid`   | A domain label is empty or breaks the length or hyphen-placement rules.                |
+| `syntax.domain.literal_invalid` | A domain literal the preset doesn't accept as written, or one with no closing `]`.     |
+| `syntax.domain.too_long`        | The domain exceeds 253 characters.                                                     |
+| `syntax.domain.invalid_char`    | A character the active preset does not allow in the domain.                            |
+| `syntax.comment.not_allowed`    | A comment, and the options don't allow comments.                                       |
+| `syntax.comment.unterminated`   | A `(` with no matching `)`.                                                            |
+| `syntax.tld.unknown`            | The TLD is not in the IANA set (only when the TLD check is on).                        |
 
 ## classifier
 
