@@ -138,17 +138,18 @@ gh api -X POST repos/email-utils/<repo>/issues/<n>/assignees \
 
 ## 6. Move it on the board
 
-The "email-utils v1.0" board is org project 1. Its built-in workflows are
-off, so nothing moves on its own. The IDs:
+The "email-utils v1.0" board is org project 1. Its built-in workflows add
+meta's issues and PRs, and the sub-issues of anything on the board, as Todo.
+They move a reopened issue to In progress, an issue linked from a PR's
+`Closes` line to In review, and closed issues and merged PRs to Done.
+Nothing moves a card to In progress when work starts, so that's this step.
+The IDs:
 
 | What         | ID                               |
 | ------------ | -------------------------------- |
 | Project      | `PVT_kwDOBa9fQs4Bk3BH`           |
 | Status field | `PVTSSF_lADOBa9fQs4Bk3BHzhjmBI0` |
-| Todo         | `2fa75343`                       |
 | In progress  | `d8943af3`                       |
-| In review    | `8ba11c94`                       |
-| Done         | `290c40a5`                       |
 
 Board moves are GraphQL-only, and GitHub's secondary rate limit for GraphQL
 is easy to trip and slow to clear. Make each call below once. If one fails,
@@ -183,7 +184,8 @@ gh api graphql -F issue=<n> -f repo=<repo> -f query='
   }' --jq '.data.repository.issue.projectItems.nodes[] | select(.project.number == 1) | {id, status: .status.name}'
 ```
 
-If the issue isn't on the board, add it and use the ID that comes back:
+If the issue isn't on the board (a package repo's issue with no parent on
+it), add it and use the ID that comes back:
 
 ```sh
 gh project item-add 1 --owner email-utils --url <html_url> --format json --jq .id
@@ -197,7 +199,8 @@ gh project item-edit --project-id PVT_kwDOBa9fQs4Bk3BH --id <item> \
 ```
 
 Leave anything already In review or Done alone and mention it; it may mean
-the work was done before.
+the work was done before. Never set an open issue to Done: "Auto-close
+issue" closes it.
 
 ## 7. Report
 
