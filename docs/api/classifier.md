@@ -179,6 +179,32 @@ export const providerSources: Readonly<
   [subaddress rules](./sanitizer.md#subaddresses) consume these fields
   (Z6).
 
+### Role accounts
+
+`isRoleAccount` is true when the local part names a function rather than a
+person. It compares the local part without case and without a `+` tag, so
+`Support+billing@` counts. The list holds each common spelling rather than
+folding separators, so `no-reply`, `no_reply`, and `noreply` are all listed:
+
+- **RFC 2142 and RFC 5321:** `abuse`, `ftp`, `hostmaster`, `info`,
+  `marketing`, `news`, `noc`, `postmaster`, `sales`, `security`, `support`,
+  `usenet`, `uucp`, `webmaster`, `www`.
+- **Senders that take no replies:** `noreply`, `donotreply`, and their
+  hyphen and underscore spellings, and `mailer-daemon`.
+- **Running the system:** `admin`, `administrator`, `it`, `root`,
+  `sysadmin`.
+- **Teams and desks:** `accounting`, `accounts`, `billing`, `careers`,
+  `compliance`, `contact`, `customerservice`, `enquiries`, `feedback`,
+  `finance`, `hello`, `help`, `helpdesk`, `hr`, `inquiries`, `jobs`,
+  `legal`, `media`, `office`, `orders`, `press`, `privacy`, `service`,
+  `team`.
+- **Lists and notifications:** `alerts`, `all`, `everyone`, `newsletter`,
+  `notifications`, `staff`.
+- **Offices rather than their holders:** `ceo`, `cfo`, `coo`, `cto`.
+
+Adding or removing a name changes which addresses count, so it's a minor
+release, like a new provider.
+
 ### Providers
 
 | ID                 | Name                       | Kind      | Rules beyond the defaults                    |
