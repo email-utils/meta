@@ -259,6 +259,40 @@ supportMatrix(); // one row per feature: which presets accept it
 The subpath is test and docs data. The fixture set may grow in any minor
 release; a changed expectation follows the package's own semver.
 
+### Previewing a configuration
+
+`expected` records each preset's defaults only. To see what your own
+options do, `previewSyntaxOptions` runs addresses through
+`createSyntaxValidator(options)` and splits them into the ones it accepts
+and the ones it rejects, each list in input order. It judges the corpus by
+default, or the addresses you pass. The docs site's configuration preview
+([meta#82](https://github.com/email-utils/meta/issues/82)) is built on it.
+
+```ts
+import { previewSyntaxOptions } from '@email-utils/validator-syntax/fixtures';
+
+export function previewSyntaxOptions(
+  options?: SyntaxOptions,
+  addresses?: readonly string[], // syntaxFixtures by default
+): SyntaxPreview;
+
+export interface SyntaxPreview {
+  valid: ValidPreviewEntry[]; // { address, description?, changed }
+  invalid: InvalidPreviewEntry[]; // { address, description?, reason, message?, index?, changed }
+}
+
+const { valid } = previewSyntaxOptions({ checkTld: false });
+valid.filter((entry) => entry.changed); // now accepted, e.g. example@s.example
+```
+
+`changed` marks the addresses the overrides move, the ones the preset alone
+would judge the other way; with no overrides, nothing is changed.
+`description` comes from the corpus and is absent for your own addresses.
+Malformed options, or `addresses` that isn't an array of strings, throw
+`TypeError` before anything is parsed, and nothing is logged. The function
+lives in the subpath and imports the parser from the root entry, so the root
+entry's size is unchanged.
+
 ## Migrating from 0.0.1
 
 The `EmailSyntaxValidator` class, its default export, the async

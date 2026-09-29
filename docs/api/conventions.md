@@ -165,4 +165,7 @@ merge.
   commit scope in every package. Amended for validator-syntax#7: syntax also
   ships `/fixtures`, so dependents' consistency tests and the docs' support
   matrix read the same corpus from npm. It's data kept off the root entry,
-  which fits (a)'s reasoning.
+  which fits (a)'s reasoning. Amended for validator-syntax#34: `/fixtures`
+  also exports `previewSyntaxOptions`, the configuration preview the docs
+  site runs. It imports the parser from the root entry, so the root stays
+  exactly as it builds alone.
