@@ -110,13 +110,14 @@ the input was. The forms differ in how much they strip:
 | Drop quotes that aren't needed  | ✓             | —          | —         |
 | Map domain aliases to canonical | provider-rule | —          | —         |
 | Fold subdomain addressing       | provider-rule | —          | —         |
+| Spell hyphens as dots           | provider-rule | —          | —         |
 | Remove dots in the local part   | provider-rule | —          | —         |
 | Remove the subaddress tag       | provider-rule | —          | —         |
 
 - **`key` is for identity, not delivery.** It collapses every spelling that
   reaches the same mailbox: `Ada.Lovelace+news@googlemail.com` and
   `adalovelace@gmail.com` share a key. Provider rules from the classifier
-  registry decide the last four rows. On a domain with no known provider,
+  registry decide the last five rows. On a domain with no known provider,
   dots and subaddress tags are left alone (see
   [Subaddresses](#subaddresses)). `removePeriods`/`removeSubaddress`
   override the provider's rules in either direction (Z2).
