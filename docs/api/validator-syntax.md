@@ -43,10 +43,12 @@ export function parseAddress(
 
 export function isValidSyntax(email: string, options?: SyntaxOptions): boolean;
 
-export function createSyntaxValidator(options?: SyntaxOptions): {
+export function createSyntaxValidator(options?: SyntaxOptions): SyntaxValidator;
+
+export interface SyntaxValidator {
   parse(email: string): Result<ParsedAddress>;
   isValid(email: string): boolean;
-};
+}
 
 export interface ParsedAddress {
   /** The local part, without comments or folding whitespace. */
@@ -77,19 +79,25 @@ export interface AddressComment {
     | 'after-domain';
 }
 
+export type Preset = 'practical' | 'rfc5321' | 'rfc5322' | 'html5';
+
+// Each option also takes `undefined`, which means unset, so a maybe-unset
+// flag can be passed through under `exactOptionalPropertyTypes`.
 export interface SyntaxOptions {
   /** @default 'practical' */
-  preset?: 'practical' | 'rfc5321' | 'rfc5322' | 'html5';
+  preset?: Preset | undefined;
   /** Check the TLD against the IANA set. Default: on in `practical`, off elsewhere. */
-  checkTld?: boolean;
+  checkTld?: boolean | undefined;
   /** Accept a domain with no dot (e.g. `localhost`). Default: on in `html5`, off elsewhere. */
-  allowNoTld?: boolean;
+  allowNoTld?: boolean | undefined;
   /**
    * Accept RFC 5322 comments, e.g. `ada(work)@example.com`. Default: on in
-   * `rfc5322`, off elsewhere. Throws `TypeError` with `rfc5321` or `html5`,
-   * whose grammars have no comments.
+   * `rfc5322`, off elsewhere. In `practical`, comments may sit only at the
+   * ends of the local part and the domain, as RFC 5322's dot-atom allows.
+   * Throws `TypeError` with `rfc5321` or `html5`, whose grammars have no
+   * comments.
    */
-  allowComments?: boolean;
+  allowComments?: boolean | undefined;
 }
 
 // Each package declares the shared Result/ReasonCode shapes locally and
@@ -133,7 +141,10 @@ Where the presets differ (the corpus behind this is published as
     follows it;
   - control characters other than NUL, CR, and LF in quoted strings and
     comments, and any ASCII character after a backslash;
-  - any text in a domain literal (`[RFC-5322-domain-literal]`).
+  - any text in a domain literal (`[RFC-5322-domain-literal]`);
+  - any atext in a domain label (`test@iana/icann.org`,
+    `james@cb$.com`), since RFC 5322's domain is a dot-atom. The hostname
+    rules for hyphens and label length still apply.
 
   Only RFC 5322's own limits apply, so there is no 64-character cap on the
   local part. A dotted domain is still required unless `allowNoTld` is on.
@@ -157,6 +168,14 @@ domain, then the TLD.
 | `checkTld`      | `boolean` | `true` in `practical` only | Uses the bundled IANA TLD set (S3).           |
 | `allowNoTld`    | `boolean` | `true` in `html5` only     | Replaces the 0.0.1 `localhost` flag (S4).     |
 | `allowComments` | `boolean` | `true` in `rfc5322` only   | Comments go to `ParsedAddress.comments` (S5). |
+
+Options are checked when they're passed: `createSyntaxValidator` checks them
+once, the top-level functions on every call. Anything malformed throws
+`TypeError` ([conventions D6](./conventions.md#decisions)): options that
+aren't an object, an unknown preset, a non-boolean override, `allowComments:
+true` with `rfc5321` or `html5`, or a key that isn't one of the four above,
+so a 0.0.1 option tree (`{ local: { … } }`) fails loudly instead of being
+ignored.
 
 ## Reason codes
 
