@@ -7,6 +7,9 @@ const config = {
   output: 'export',
   basePath: '/meta',
   reactStrictMode: true,
+  // docs/ has its own lockfile inside meta's, so name the root rather than
+  // let Next.js guess it.
+  turbopack: { root: import.meta.dirname },
 };
 
 export default withMDX(config);

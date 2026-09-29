@@ -31,3 +31,19 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+
+  # The docs site, its own npm project. Fumadocs' packages release in step and
+  # pin each other, so they update together.
+  - package-ecosystem: npm
+    directory: /docs
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      fumadocs:
+        patterns:
+          - 'fumadocs-*'

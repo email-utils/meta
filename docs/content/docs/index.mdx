@@ -1,13 +1,32 @@
 ---
-title: Hello World
-description: Your first document
+title: email-utils
+description: Small, focused packages for checking and normalizing email addresses.
 ---
 
-Welcome to the docs! You can start writing documents in `/content/docs`.
+`@email-utils` is four packages, each answering one question about an address.
+Use the ones you need; each depends only on the packages before it.
 
-## What is Next?
+| Package                         | Question                     | Answers with                              |
+| ------------------------------- | ---------------------------- | ----------------------------------------- |
+| `@email-utils/validator-syntax` | Is it well-formed?           | Parser, presets, TLD set                  |
+| `@email-utils/classifier`       | What is it?                  | Provider registry, disposable, role, typo |
+| `@email-utils/sanitizer`        | What is its canonical form?  | Provider-aware normalization              |
+| `@email-utils/validator-dns`    | Can the domain receive mail? | MX, Null MX, signals                      |
 
-<Cards>
-  <Card title="Learn more about Next.js" href="https://nextjs.org/docs" />
-  <Card title="Learn more about Fumadocs" href="https://fumadocs.dev" />
-</Cards>
+validator-syntax, classifier, and sanitizer are synchronous and run in the
+browser and in Node. validator-dns is async and runs on the server.
+
+```ts ts2js
+import { parseAddress } from '@email-utils/validator-syntax';
+
+function domainOf(email: string): string | undefined {
+  const result = parseAddress(email);
+  return result.ok ? result.value.domain : undefined;
+}
+```
+
+<Callout title="v1.0 is in development">
+  Guides, recipes, and the API reference arrive with the 1.0 release. Until
+  then, each package's repository on [GitHub](https://github.com/email-utils)
+  has the latest.
+</Callout>
