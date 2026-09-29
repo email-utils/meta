@@ -73,7 +73,7 @@
         "workflows": "Reusable workflows and meta's own CI",
         "templates": "Shared package config in templates/",
         "plugin": "The Claude plugin, its skills, and this file",
-        "site": "The VitePress docs site build and deploy",
+        "site": "The Fumadocs docs site build and deploy",
         "mani": "The mani workspace"
       },
       "validator-syntax": {

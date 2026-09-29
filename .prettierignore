@@ -1,2 +1,9 @@
 # Machine-generated lockfile
 package-lock.json
+
+# The docs site's build output and generated files, listed in docs/.gitignore,
+# which Prettier doesn't read.
+docs/.next/
+docs/out/
+docs/.source/
+docs/next-env.d.ts

@@ -1,0 +1,91 @@
+name: Docs
+
+# Builds the Fumadocs site in docs/ and checks it, reported as `docs / build`.
+# On main it also deploys the static export to GitHub Pages, whose source is
+# set to GitHub Actions. The site is its own npm project, so this workflow
+# installs from docs/package-lock.json, not meta's.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - docs/**
+      - .github/workflows/docs.yml
+  push:
+    branches: [main]
+    paths:
+      - docs/**
+      - .github/workflows/docs.yml
+  workflow_dispatch:
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+    working-directory: docs
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    # A newer push to a PR replaces this run. On main every commit builds, so
+    # the deploy always has an artifact from the commit it's deploying.
+    concurrency:
+      group: ${{ github.workflow }}-build-${{ github.event.pull_request.number || github.sha }}
+      cancel-in-progress: true
+    permissions:
+      contents: read # check out meta
+    steps:
+      - name: Check out meta
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The site runs on the packages' Node, like the rest of meta.
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: templates/synced/.nvmrc
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run types:check
+
+      - name: Check links
+        run: npm run lint:links
+
+      - name: Build the site
+        run: npm run build
+
+      - name: Upload the site
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: docs/out
+
+  deploy:
+    name: deploy
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    # One deploy at a time, and never cancel one mid-way: a queued deploy
+    # waits, then publishes the newer build.
+    concurrency:
+      group: ${{ github.workflow }}-deploy
+      cancel-in-progress: false
+    permissions:
+      pages: write # deploy to Pages
+      id-token: write # prove the deploy came from this workflow
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
