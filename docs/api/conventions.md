@@ -102,7 +102,8 @@ the client, DNS on the server. (D7)
 - Subpath entries exist only where they carry heavy tree-shakeable data:
   `@email-utils/classifier/providers` and `@email-utils/classifier/disposable`,
   plus `@email-utils/validator-syntax/fixtures`, the test corpus that
-  dependents and the docs read. Everything else lives at the root. (D10)
+  dependents and the docs read, and `@email-utils/classifier/sources`, the
+  registry's citations. Everything else lives at the root. (D10)
 - No package ever writes to the console. (epic)
 
 ## Forward compatibility
@@ -165,4 +166,10 @@ merge.
   commit scope in every package. Amended for validator-syntax#7: syntax also
   ships `/fixtures`, so dependents' consistency tests and the docs' support
   matrix read the same corpus from npm. It's data kept off the root entry,
-  which fits (a)'s reasoning.
+  which fits (a)'s reasoning. Amended for validator-syntax#34: `/fixtures`
+  also exports `previewSyntaxOptions`, the configuration preview the docs
+  site runs. It imports the parser from the root entry, so the root stays
+  exactly as it builds alone. Amended for classifier#7: the classifier also ships
+  `/sources`, the page and verified date behind each registry fact, for the
+  docs' support matrix (meta#18). It's data kept off `/providers`, so
+  callers of the registry don't ship the URLs.

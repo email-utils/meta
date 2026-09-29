@@ -234,11 +234,13 @@ jobs:
         run: npm ci
 
       # The runner's hardware goes alongside Vitest's results, so the
-      # Performance page can say what the numbers were measured on.
+      # Performance page can say what the numbers were measured on. Vitest 5
+      # has no `--outputJson`; its JSON reporter puts each benchmark's stats
+      # under `testResults[].assertionResults[].benchmarks`.
       - name: Run the benchmarks
         if: steps.find.outputs.found == 'true'
         run: |
-          npm run bench -- --outputJson "$RUNNER_TEMP/vitest-bench.json"
+          npm run bench -- --reporter=json --outputFile "$RUNNER_TEMP/vitest-bench.json"
           jq \
             --arg cpu "$(lscpu | sed -n 's/^Model name: *//p')" \
             --argjson cores "$(nproc)" \

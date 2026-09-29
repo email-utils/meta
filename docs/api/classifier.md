@@ -65,21 +65,35 @@ export interface Classification {
 /** Stable provider identifier, e.g. 'gmail', 'google-workspace', or 'microsoft365'. */
 export type ProviderId = string;
 
+/**
+ * What a provider's domains are: `personal` for a mailbox service anyone can
+ * sign up for, free or paid; `business` for hosting an organization's own
+ * domain; `registrar` for a registrar's default forwarding MX.
+ */
+export type ProviderKind = 'personal' | 'business' | 'registrar';
+
 export interface ProviderInfo {
   id: ProviderId;
   name: string;
+  kind: ProviderKind;
   /**
    * Domains the provider serves mail for, e.g. gmail.com and googlemail.com.
    * Empty for hosted-domain providers such as Google Workspace, which only
    * validator-dns can recognize, by MX.
    */
-  domains: string[];
+  domains: readonly string[];
   /** When set, all of `domains` share mailboxes and keys use this one, e.g. gmail.com. */
   canonicalDomain?: string;
-  /** MX host patterns that validator-dns's `detectProviderByMx` matches. */
-  mxPatterns: string[];
+  /**
+   * MX host patterns that validator-dns's `detectProviderByMx` matches:
+   * lowercase host names without the trailing dot, where a leading `*.`
+   * matches one or more labels.
+   */
+  mxPatterns: readonly string[];
   /** Whether dots in the local part change the mailbox (false for Gmail). */
   dotsSignificant: boolean;
+  /** Whether a hyphen in the local part is its own character (false for Yandex, where it matches a dot). */
+  hyphensSignificant: boolean;
   /** The single character that starts a subaddress tag, e.g. '+' or '-'; absent if none. */
   subaddressSeparator?: string;
   /** Whether `tag@user.<domain>` delivers to `user@<domain>`, as on Fastmail. */
@@ -99,6 +113,31 @@ import { getProvider, providers } from '@email-utils/classifier/providers';
 
 // Disposable-domain set only
 import { isDisposable } from '@email-utils/classifier/disposable';
+
+// Where each registry fact comes from, for the docs' support matrix
+import { providerSources } from '@email-utils/classifier/sources';
+```
+
+`/sources` holds no code. It exports `providerSources`, which maps each
+`ProviderId` to the pages behind its entry: the rule each one backs, its URL
+(absent when the fact was read from DNS), the date it was last checked, and
+a note on what it says. Keeping it out of `/providers` means callers of the
+registry don't ship the URLs.
+
+```ts
+export type ProviderRule = keyof Omit<ProviderInfo, 'id' | 'name' | 'kind'>;
+
+export interface ProviderSource {
+  rule: ProviderRule;
+  url?: string;
+  /** `YYYY-MM-DD`. */
+  verified: string;
+  note?: string;
+}
+
+export const providerSources: Readonly<
+  Record<ProviderId, readonly ProviderSource[]>
+>;
 ```
 
 ## Behavior
@@ -122,11 +161,77 @@ import { isDisposable } from '@email-utils/classifier/disposable';
   Google Workspace are separate entries because their rules differ: dots
   are ignored in gmail.com addresses but change the mailbox on Workspace
   domains.
+- The registry records only what each provider documents. A rule it
+  doesn't document keeps the default: dots and hyphens count, no subaddress
+  separator, and no subdomain addressing. Merging two people's addresses
+  under one key is worse than missing a duplicate,
+  so Yahoo, AOL, iCloud, Zoho, GMX, WEB.DE, Mail.ru, Tuta, and HEY have no
+  separator. Every entry cites its MX patterns, its domains, and each
+  non-default rule in `/sources`.
+- Providers that sell both personal mailboxes and hosting for custom
+  domains get two entries when the two use different MX hosts, so that a
+  `detectProviderByMx` hit reports the right `kind`: `gmail` and
+  `google-workspace`, `outlook` and `microsoft365`, `zoho` and
+  `zoho-business`, `yandex` and `yandex-360`.
 - With `subdomainAddressing`, `getProvider` also matches one-label
   subdomains of the provider's domains: `news@ada.fastmail.com` is Fastmail.
   The sanitizer's
   [subaddress rules](./sanitizer.md#subaddresses) consume these fields
   (Z6).
+
+### Role accounts
+
+`isRoleAccount` is true when the local part names a function rather than a
+person. It compares the local part without case and without a `+` tag, so
+`Support+billing@` counts. The list holds each common spelling rather than
+folding separators, so `no-reply`, `no_reply`, and `noreply` are all listed:
+
+- **RFC 2142 and RFC 5321:** `abuse`, `ftp`, `hostmaster`, `info`,
+  `marketing`, `news`, `noc`, `postmaster`, `sales`, `security`, `support`,
+  `usenet`, `uucp`, `webmaster`, `www`.
+- **Senders that take no replies:** `noreply`, `donotreply`, and their
+  hyphen and underscore spellings, and `mailer-daemon`.
+- **Running the system:** `admin`, `administrator`, `it`, `root`,
+  `sysadmin`.
+- **Teams and desks:** `accounting`, `accounts`, `billing`, `careers`,
+  `compliance`, `contact`, `customerservice`, `enquiries`, `feedback`,
+  `finance`, `hello`, `help`, `helpdesk`, `hr`, `inquiries`, `jobs`,
+  `legal`, `media`, `office`, `orders`, `press`, `privacy`, `service`,
+  `team`.
+- **Lists and notifications:** `alerts`, `all`, `everyone`, `newsletter`,
+  `notifications`, `staff`.
+- **Offices rather than their holders:** `ceo`, `cfo`, `coo`, `cto`.
+
+Adding or removing a name changes which addresses count, so it's a minor
+release, like a new provider.
+
+### Providers
+
+| ID                 | Name                       | Kind      | Rules beyond the defaults                    |
+| ------------------ | -------------------------- | --------- | -------------------------------------------- |
+| `gmail`            | Gmail                      | personal  | canonical gmail.com; dots ignored; `+`       |
+| `google-workspace` | Google Workspace           | business  | `+`                                          |
+| `outlook`          | Outlook.com                | personal  | `+`                                          |
+| `microsoft365`     | Microsoft 365              | business  | `+`                                          |
+| `yahoo`            | Yahoo Mail                 | personal  | —                                            |
+| `aol`              | AOL Mail                   | personal  | —                                            |
+| `icloud`           | iCloud Mail                | personal  | canonical icloud.com                         |
+| `proton`           | Proton Mail                | personal  | `+`                                          |
+| `fastmail`         | Fastmail                   | personal  | `+`; subdomain addressing                    |
+| `zoho`             | Zoho Mail                  | personal  | —                                            |
+| `zoho-business`    | Zoho Mail for business     | business  | —                                            |
+| `yandex`           | Yandex Mail                | personal  | canonical yandex.ru; hyphens match dots; `+` |
+| `yandex-360`       | Yandex 360 for Business    | business  | —                                            |
+| `gmx`              | GMX                        | personal  | —                                            |
+| `web-de`           | WEB.DE                     | personal  | —                                            |
+| `mail-ru`          | Mail.ru                    | personal  | —                                            |
+| `tuta`             | Tuta Mail                  | personal  | —                                            |
+| `hey`              | HEY                        | personal  | —                                            |
+| `namecheap`        | Namecheap Email Forwarding | registrar | —                                            |
+
+The IDs are public: the sanitizer's `provider` option and validator-dns's
+`detectProviderByMx` use them. A new provider is a minor release; changing or
+removing an ID is breaking.
 
 ## Reason codes
 

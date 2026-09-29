@@ -98,6 +98,22 @@ export interface SyntaxOptions {
    * comments.
    */
   allowComments?: boolean | undefined;
+  /**
+   * Accept non-ASCII in the local part (RFC 6531, SMTPUTF8), e.g.
+   * `用户@example.com`: in atoms, quoted strings, and comments. Default: off.
+   * Throws `TypeError` with `html5`.
+   */
+  allowUnicode?: boolean | undefined;
+  /**
+   * Accept U-label domains, e.g. `ada@bücher.example`, kept as written.
+   * Default: off. Throws `TypeError` with `html5`.
+   */
+  allowIdn?: boolean | undefined;
+  /**
+   * Accept domain literals, e.g. `ada@[192.0.2.1]`. Default: on in `rfc5321`
+   * and `rfc5322`, off elsewhere. Throws `TypeError` when `true` with `html5`.
+   */
+  allowIpLiteral?: boolean | undefined;
 }
 
 // Each package declares the shared Result/ReasonCode shapes locally and
@@ -162,20 +178,49 @@ domain, then the TLD.
 
 ## Options
 
-| Option          | Type      | Default                    | Notes                                         |
-| --------------- | --------- | -------------------------- | --------------------------------------------- |
-| `preset`        | `string`  | `'practical'`              | Base rule set.                                |
-| `checkTld`      | `boolean` | `true` in `practical` only | Uses the bundled IANA TLD set (S3).           |
-| `allowNoTld`    | `boolean` | `true` in `html5` only     | Replaces the 0.0.1 `localhost` flag (S4).     |
-| `allowComments` | `boolean` | `true` in `rfc5322` only   | Comments go to `ParsedAddress.comments` (S5). |
+| Option           | Type      | Default                        | Notes                                         |
+| ---------------- | --------- | ------------------------------ | --------------------------------------------- |
+| `preset`         | `string`  | `'practical'`                  | Base rule set.                                |
+| `checkTld`       | `boolean` | `true` in `practical` only     | Uses the bundled IANA TLD set (S3).           |
+| `allowNoTld`     | `boolean` | `true` in `html5` only         | Replaces the 0.0.1 `localhost` flag (S4).     |
+| `allowComments`  | `boolean` | `true` in `rfc5322` only       | Comments go to `ParsedAddress.comments` (S5). |
+| `allowUnicode`   | `boolean` | `false`                        | RFC 6531 local parts (S6).                    |
+| `allowIdn`       | `boolean` | `false`                        | U-label domains (S6).                         |
+| `allowIpLiteral` | `boolean` | `true` in `rfc5321`, `rfc5322` | Domain literals in any preset but `html5`.    |
 
 Options are checked when they're passed: `createSyntaxValidator` checks them
 once, the top-level functions on every call. Anything malformed throws
 `TypeError` ([conventions D6](./conventions.md#decisions)): options that
 aren't an object, an unknown preset, a non-boolean override, `allowComments:
-true` with `rfc5321` or `html5`, or a key that isn't one of the four above,
-so a 0.0.1 option tree (`{ local: { … } }`) fails loudly instead of being
-ignored.
+true` with `rfc5321` or `html5`, `allowUnicode`, `allowIdn`, or
+`allowIpLiteral` `true` with `html5`, or a key that isn't one of the seven
+above, so a 0.0.1 option tree (`{ local: { … } }`) fails loudly instead of
+being ignored.
+
+### International addresses
+
+`allowUnicode` and `allowIdn` are off in every preset, so the defaults stay
+with the addresses most systems can deliver to today (S6); each is one flag
+to turn on. None of the three can be turned on in `html5`, whose grammar is
+the WHATWG regex: ASCII-only, with no literals.
+
+- **`allowUnicode`** accepts any non-ASCII character in local-part atoms and
+  quoted strings, and in comments where they're allowed. A lone surrogate,
+  which no UTF-8 text can hold, fails with `syntax.local.invalid_char`. The
+  64 cap on the local part and the 254 cap on the address count UTF-8
+  octets, as RFC 6531 keeps them.
+- **`allowIdn`** accepts domain labels written as U-labels. Each one must
+  convert to an A-label under UTS #46, the mapping the WHATWG URL parser
+  applies, with its bidi and joiner rules, or it fails with
+  `syntax.domain.label_invalid`. So does a label that UTS #46 maps to plain
+  ASCII (fullwidth `ｅｘａｍｐｌｅ`) or splits in two (`。`). The 63 and 253
+  caps apply to the A-label form. `ParsedAddress.domain` and `tld` keep the
+  labels as written; the TLD check knows IDN TLDs in both forms. A-labels
+  (`xn--bcher-kva`) are hostname labels, so every preset accepts them
+  without the flag.
+- **`allowIpLiteral`** adds IPv4 and `IPv6:` address literals to
+  `practical`. `false` turns literals off in `rfc5321` and `rfc5322`, whose
+  general literals go with them.
 
 ## Reason codes
 
@@ -214,6 +259,40 @@ supportMatrix(); // one row per feature: which presets accept it
 The subpath is test and docs data. The fixture set may grow in any minor
 release; a changed expectation follows the package's own semver.
 
+### Previewing a configuration
+
+`expected` records each preset's defaults only. To see what your own
+options do, `previewSyntaxOptions` runs addresses through
+`createSyntaxValidator(options)` and splits them into the ones it accepts
+and the ones it rejects, each list in input order. It judges the corpus by
+default, or the addresses you pass. The docs site's configuration preview
+([meta#82](https://github.com/email-utils/meta/issues/82)) is built on it.
+
+```ts
+import { previewSyntaxOptions } from '@email-utils/validator-syntax/fixtures';
+
+export function previewSyntaxOptions(
+  options?: SyntaxOptions,
+  addresses?: readonly string[], // syntaxFixtures by default
+): SyntaxPreview;
+
+export interface SyntaxPreview {
+  valid: ValidPreviewEntry[]; // { address, description?, changed }
+  invalid: InvalidPreviewEntry[]; // { address, description?, reason, message?, index?, changed }
+}
+
+const { valid } = previewSyntaxOptions({ checkTld: false });
+valid.filter((entry) => entry.changed); // now accepted, e.g. example@s.example
+```
+
+`changed` marks the addresses the overrides move, the ones the preset alone
+would judge the other way; with no overrides, nothing is changed.
+`description` comes from the corpus and is absent for your own addresses.
+Malformed options, or `addresses` that isn't an array of strings, throw
+`TypeError` before anything is parsed, and nothing is logged. The function
+lives in the subpath and imports the parser from the root entry, so the root
+entry's size is unchanged.
+
 ## Migrating from 0.0.1
 
 The `EmailSyntaxValidator` class, its default export, the async
@@ -246,3 +325,10 @@ quote-handling bug is fixed by the rewrite
   where comments almost never appear, and HTML5 forms and SMTP envelopes
   reject them; callers who want them opt in with one flag; (b) accept
   comments in `practical` too; (c) never accept comments.
+- **S6 — International addresses.** **(a) `allowUnicode` and `allowIdn`,
+  off everywhere, domains kept as written — recommended**: RFC 6531 support
+  is still patchy among mail servers, so the default stays deliverable, and
+  a parser that doesn't normalize leaves A-label conversion to the dns
+  package, which punycodes before lookup, and to the sanitizer (Z3);
+  (b) U-label domains returned as A-labels; (c) on by default in `rfc5321`
+  and `rfc5322`.
