@@ -2,6 +2,7 @@ node_modules/
 dist/
 coverage/
 .reports/
+.cache/
 *.tgz
 .DS_Store
 
