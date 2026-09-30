@@ -62,19 +62,28 @@ export function createDnsValidator(options?: DnsValidatorOptions): {
 };
 
 export interface DnsSignals {
+  /** MX records other than a Null MX. */
   hasMx: boolean;
-  /** RFC 7505: the domain explicitly receives no mail. */
+  /** A Null MX (RFC 7505) was published; see Behavior. */
   nullMx: boolean;
   /** No MX, but A/AAAA serves as the implicit MX (RFC 5321 §5.1). */
   implicitMx: boolean;
-  hasA: boolean;
-  hasAaaa: boolean;
-  /** A `v=spf1` record was found in the joined TXT chunks. */
-  hasSpf: boolean;
+  /** `undefined` when the A lookup failed. */
+  hasA: boolean | undefined;
+  /** `undefined` when the AAAA lookup failed. */
+  hasAaaa: boolean | undefined;
+  /** A `v=spf1` record in the joined TXT chunks; `undefined` when the TXT lookup failed. */
+  hasSpf: boolean | undefined;
+  /** Lowercased, without the trailing dot, in preference order; empty for an implicit MX. */
   mxHosts: string[];
 }
 
 export interface DnsOptions {
+  /**
+   * How the input is parsed before any lookup.
+   * @default validator-syntax's `practical` preset with `allowIdn`
+   */
+  syntax?: SyntaxOptions;
   /** Per-query and overall budgets in milliseconds. @default { query: 2000, overall: 5000 } */
   timeout?: { query?: number; overall?: number };
   signal?: AbortSignal;
@@ -105,8 +114,37 @@ the implicit MX (RFC 5321 §5.1); reject Null MX (RFC 7505). Everything it
 learned on the way is on the success value as signals (N2). Input is
 punycoded before lookup, and unparsable input short-circuits without a query.
 
+**Parsing.** The input is trimmed and parsed with validator-syntax, using the
+`syntax` option. `allowIdn` is on by default, since looking up an IDN domain
+by its A-labels is part of the job; it stays off for the `html5` preset,
+which can't hold IDN domains. A string without an `@` is a bare domain.
+These fail with `dns.address.unparsable` before any lookup: input the syntax
+options reject, a domain literal (`[192.0.2.1]` has nothing to look up), and
+an `rfc5322` domain with atext no hostname can hold (`a#b.com`).
+
+**Lookups.** MX, A, AAAA, and TXT are looked up at once; NS isn't, so a
+subdomain without NS records of its own passes. `ENODATA` and `ENOTFOUND`
+mean no records. The domain fails with `dns.domain.not_found` when all four
+come back empty, and with `dns.mx.none` when only TXT has records.
+
+**Null MX.** A Null MX is an MX record whose host is `.`. On its own it fails
+the check with `dns.mx.null`, even when the domain has A records. RFC 7505
+forbids publishing it next to other MX records; when a domain does, the other
+records are used and `nullMx` is still `true`.
+
+**Failed lookups.** A failed lookup fails the check only when the answer
+rests on it: MX always, and A or AAAA when there's no MX and the other one
+has no records. The result is `dns.lookup.timeout` for `ETIMEOUT` and
+`dns.lookup.failed` otherwise. Any other failed lookup leaves its signal
+`undefined` rather than `false`, so a flaky TXT server doesn't fail a domain
+that receives mail, and a score over the signals can tell "no SPF" from "not
+known".
+
 The factory holds the resolver and a TTL cache with in-flight dedupe, so a
 thousand concurrent checks of one domain make one lookup per record type.
+The factory, `timeout`, and `signal` come with
+[validator-dns#8](https://github.com/email-utils/validator-dns/issues/8);
+until then lookups use `node:dns/promises` with Node's own timeouts.
 Resolver errors map to `dns.*` reason codes, never throws
 ([conventions D6](./conventions.md#errors)).
 
@@ -211,7 +249,9 @@ looked up, and port probes are awaited. `isGSuiteMX` and
   `scoring` option changes the return type.
 - **N2 — Signals surface.** **(a) expose `DnsSignals` on the success value —
   recommended**: #7 requires correct signals anyway and callers need them;
-  (b) keep them internal.
+  (b) keep them internal. Amended for validator-dns#7: `hasA`, `hasAaaa`,
+  and `hasSpf` are `undefined` when their lookup failed, and a failed lookup
+  fails the check only when the answer rests on it (see Failed lookups).
 - **N3 — SMTP port probing.** **(a) keep it, opt-in, parallel and awaited, as
   a diagnostic and as the scoring label source — recommended**: this is what
   [#10](https://github.com/email-utils/validator-dns/issues/10) specifies,
