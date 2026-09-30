@@ -31,6 +31,7 @@ isValidSyntax('ada@example.com'); // true — sugar for parseAddress(...).ok
 const strict = createSyntaxValidator({ preset: 'rfc5321' });
 strict.parse('a b@example.com');
 strict.isValid('a b@example.com');
+strict.maxLength; // 512 — the input limit it applies
 ```
 
 ## Exports
@@ -48,6 +49,12 @@ export function createSyntaxValidator(options?: SyntaxOptions): SyntaxValidator;
 export interface SyntaxValidator {
   parse(email: string): Result<ParsedAddress>;
   isValid(email: string): boolean;
+  /**
+   * The `maxLength` it applies: the one passed, or the default, 512;
+   * `Infinity` for no limit. The validator is frozen, so this can't be
+   * reassigned.
+   */
+  readonly maxLength: number;
 }
 
 export interface ParsedAddress {
@@ -188,6 +195,12 @@ folding whitespace included. It defaults to 512 in every preset: twice the
 address cap, which leaves room for comments and folding whitespace.
 Checking it first rejects oversized input in constant time, however long it
 is. `Infinity` turns it off.
+
+A validator from `createSyntaxValidator` exposes the limit it applies as
+`maxLength`. A dependent that trims or otherwise pre-processes input before
+parsing it can check the raw length against that first, so oversized input
+is still rejected before any work, and padding can't carry input past the
+limit.
 
 ## Options
 
