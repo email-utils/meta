@@ -28,7 +28,10 @@ if (result.ok) {
 
 await isValidDns('ada@example.com'); // sugar for (await checkDns(...)).ok
 
-await detectProviderByMx('example.com'); // 'google-workspace' | 'microsoft365' | … | undefined
+const provider = await detectProviderByMx('example.com');
+if (provider.ok) {
+  provider.value; // 'google-workspace' | 'microsoft365' | … | undefined
+}
 
 const validator = createDnsValidator({
   timeout: { query: 2000, overall: 5000 },
@@ -52,7 +55,7 @@ export function isValidDns(
 export function detectProviderByMx(
   emailOrDomain: string,
   options?: DnsOptions,
-): Promise<ProviderId | undefined>;
+): Promise<Result<ProviderId | undefined>>;
 
 export function createDnsValidator(options?: DnsValidatorOptions): DnsValidator;
 
@@ -62,7 +65,10 @@ export interface DnsValidator {
     options?: DnsCallOptions,
   ): Promise<Result<DnsSignals>>;
   isValid(emailOrDomain: string, options?: DnsCallOptions): Promise<boolean>;
-  detectProviderByMx(emailOrDomain: string): Promise<ProviderId | undefined>;
+  detectProviderByMx(
+    emailOrDomain: string,
+    options?: DnsCallOptions,
+  ): Promise<Result<ProviderId | undefined>>;
   score(emailOrDomain: string): Promise<DnsScore>;
 }
 
@@ -183,6 +189,23 @@ one rejection besides a `TypeError`
 keeps going for them, and its answer is cached as usual. Resolver errors
 map to `dns.*` reason codes, never throws.
 
+**Providers.** `detectProviderByMx` looks up MX alone, through the same
+parsing, budgets, signals, and cache as `checkDns`, and matches the hosts
+against the `mxPatterns` in `@email-utils/classifier/providers`. A pattern
+names one host, or with a leading `*.` any host one or more labels under
+it; a host that merely contains a pattern, as 0.0.1's substring match
+allowed, matches nothing. The hosts are tried in preference order and the
+first one the registry knows names the provider, so a domain behind a
+filtering gateway is still found by its Google or Microsoft backup MX.
+The value is the classifier's `ProviderId`: `google-workspace` for
+`smtp.google.com` or `aspmx.l.google.com`, `microsoft365`, `namecheap` for
+the registrar's default forwarding MX. It's `undefined` when the MX answer
+names no provider the registry knows, including a domain with no MX (an
+implicit MX has no host to match), a Null MX, or no records at all. When it
+can't tell, it fails as `checkDns` does, so "no known provider" and "don't
+know" stay apart: `dns.address.unparsable` for input that doesn't parse,
+and `dns.lookup.timeout` or `dns.lookup.failed` when the MX lookup does.
+
 ## Scoring
 
 Scoring is opt-in and separate from `checkDns` (N1), because it answers a
@@ -270,7 +293,8 @@ weight config is gone: NS no longer hard-fails subdomains, and weights are
 fitted rather than configured. SPF is parsed from joined TXT chunks, AAAA is
 looked up, and port probes are awaited. `isGSuiteMX` and
 `isDefaultNamecheapMX` become one `detectProviderByMx` returning a
-`ProviderId`. See
+`ProviderId` in a result, which fails rather than answering `false` when
+the MX lookup fails. See
 [validator-dns#7](https://github.com/email-utils/validator-dns/issues/7),
 [#8](https://github.com/email-utils/validator-dns/issues/8),
 [#9](https://github.com/email-utils/validator-dns/issues/9), and
@@ -310,7 +334,13 @@ looked up, and port probes are awaited. `isGSuiteMX` and
   classifier is sync and does no I/O. The Google MX hosts #9 lists
   (`aspmx.l.google.com`, `smtp.google.com`) identify the `google-workspace`
   entry; gmail.com itself is the separate `gmail` entry (Z6 on the
-  [sanitizer page](./sanitizer.md#decisions)).
+  [sanitizer page](./sanitizer.md#decisions)). Amended for validator-dns#9:
+  the first host in preference order that the registry knows names the
+  provider; it returns `Result<ProviderId | undefined>` rather than a bare
+  `ProviderId | undefined`, so a failed or timed-out MX lookup is a
+  `dns.lookup.*` failure rather than an `undefined` that reads as "no known
+  provider"; and a validator's `detectProviderByMx` takes a per-call
+  `signal` like its other methods.
 - **N6 — Scoring in v1 without a corpus.** **(a) hold `scoreDns` back to a
   later minor if the labeled corpus and fit are not ready — recommended**:
   an uncalibrated probability is a false claim, and adding the export later

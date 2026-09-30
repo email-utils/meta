@@ -42,7 +42,8 @@ records, so server code passes in what validator-dns found:
 ```ts
 import { detectProviderByMx } from '@email-utils/validator-dns';
 
-const provider = await detectProviderByMx('A.da+news@mycompany.com'); // 'google-workspace'
+const detected = await detectProviderByMx('A.da+news@mycompany.com'); // { ok: true, value: 'google-workspace' }
+const provider = detected.ok ? detected.value : undefined;
 normalizeEmail('A.da+news@mycompany.com', { provider });
 // key: 'a.da@mycompany.com' (tag removed, dots kept: Workspace rules)
 ```
