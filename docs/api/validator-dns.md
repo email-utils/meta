@@ -1,6 +1,7 @@
 # @email-utils/validator-dns
 
-Can the domain receive mail? MX, Null MX, signals.
+Can the domain receive mail? MX, Null MX, signals, and, opt-in, SMTP probes
+and a calibrated score.
 
 Node-only, and the suite's only async package
 ([conventions D7](./conventions.md#sync-and-async)).
@@ -16,6 +17,8 @@ import {
   checkDns,
   isValidDns,
   detectProviderByMx,
+  probeSmtp,
+  scoreDns,
   createDnsValidator,
 } from '@email-utils/validator-dns';
 
@@ -31,6 +34,18 @@ await isValidDns('ada@example.com'); // sugar for (await checkDns(...)).ok
 const provider = await detectProviderByMx('example.com');
 if (provider.ok) {
   provider.value; // 'google-workspace' | 'microsoft365' | … | undefined
+}
+
+// Opt-in: connect, EHLO, and QUIT with each MX host (never MAIL or RCPT).
+const probed = await probeSmtp('example.com');
+if (probed.ok) {
+  probed.value.accepted; // true when some MX host answered EHLO with 250
+}
+
+// Opt-in: how likely the MX hosts are to accept, from the DNS alone.
+const scored = await scoreDns('example.com');
+if (scored.ok) {
+  scored.value.probability; // e.g. 0.97, calibrated on held-out domains
 }
 
 const validator = createDnsValidator({
@@ -57,6 +72,16 @@ export function detectProviderByMx(
   options?: DnsOptions,
 ): Promise<Result<ProviderId | undefined>>;
 
+export function probeSmtp(
+  emailOrDomain: string,
+  options?: DnsOptions,
+): Promise<Result<SmtpProbe>>;
+
+export function scoreDns(
+  emailOrDomain: string,
+  options?: DnsOptions,
+): Promise<Result<DnsScore>>;
+
 export function createDnsValidator(options?: DnsValidatorOptions): DnsValidator;
 
 export interface DnsValidator {
@@ -69,7 +94,14 @@ export interface DnsValidator {
     emailOrDomain: string,
     options?: DnsCallOptions,
   ): Promise<Result<ProviderId | undefined>>;
-  score(emailOrDomain: string): Promise<DnsScore>;
+  probeSmtp(
+    emailOrDomain: string,
+    options?: DnsCallOptions,
+  ): Promise<Result<SmtpProbe>>;
+  score(
+    emailOrDomain: string,
+    options?: DnsCallOptions,
+  ): Promise<Result<DnsScore>>;
 }
 
 export interface DnsSignals {
@@ -99,7 +131,40 @@ export interface DnsOptions {
   timeout?: DnsTimeout;
   /** Rejects the check with the signal's `reason` when it aborts. */
   signal?: AbortSignal;
+  /** How `probeSmtp` probes; the other functions ignore it. */
+  smtp?: SmtpOptions;
+  /** A bundled fit by name, or a model of your own — see Scoring. @default 'dns-reachability' */
+  scoreModel?: DnsScoreModel | 'dns-reachability' | 'dns-only';
 }
+
+export interface SmtpOptions {
+  /** 465 speaks TLS from the start (RFC 8314). @default [25] */
+  ports?: number[];
+  /** @default the address literal of the connection's local end, e.g. [192.0.2.1] */
+  ehloName?: string;
+  /** Each probe's budget, connecting to the EHLO reply, in ms. @default 10_000 */
+  timeout?: number;
+  /** One host at a time, stopping at the first that accepts. @default false */
+  untilAccepted?: boolean;
+}
+
+export interface SmtpProbe {
+  /** Some probe was `accepted`. */
+  accepted: boolean;
+  /** Each MX host in preference order, each port in turn. */
+  probes: SmtpPortProbe[];
+}
+
+export interface SmtpPortProbe {
+  host: string;
+  port: number;
+  outcome: SmtpOutcome;
+  /** The last reply's code: EHLO's, or the greeting's. */
+  code?: number;
+  message?: string;
+}
+
+export type SmtpOutcome = 'accepted' | 'refused' | 'unreachable' | 'timeout';
 
 export interface DnsTimeout {
   query?: number;
@@ -116,8 +181,6 @@ export interface DnsValidatorOptions extends DnsOptions {
   resolver?: DnsResolver;
   /** How long an answer stays cached, in ms; 0 caches nothing. @default 30_000 */
   cacheTtl?: number;
-  /** Override the fitted scoring model. Doing so voids calibration — see Scoring. */
-  scoreModel?: DnsScoreModel;
 }
 
 export interface DnsResolver {
@@ -206,6 +269,60 @@ can't tell, it fails as `checkDns` does, so "no known provider" and "don't
 know" stay apart: `dns.address.unparsable` for input that doesn't parse,
 and `dns.lookup.timeout` or `dns.lookup.failed` when the MX lookup does.
 
+## Probes
+
+`probeSmtp` is opt-in (N3). It runs `checkDns`, and fails as it does before
+any connection. Then it probes each MX host, or the domain itself for an
+implicit MX, on every port in `smtp.ports`, all at once, and waits for
+every probe. A probe connects, reads the greeting, sends EHLO, and sends
+QUIT. It never sends MAIL or RCPT, so it learns whether a mail server
+answers, not whether a mailbox exists
+([meta#18](https://github.com/email-utils/meta/issues/18)'s non-goal).
+
+Each probe settles as one of:
+
+| Outcome       | When                                                                       |
+| ------------- | -------------------------------------------------------------------------- |
+| `accepted`    | A 220 greeting, then 250 to EHLO.                                          |
+| `refused`     | Any other reply, a malformed one, a hang-up, or a reset after connecting.  |
+| `unreachable` | Nothing took the connection (`ECONNREFUSED`, `EHOSTUNREACH`, `ENOTFOUND`). |
+| `timeout`     | No greeting or EHLO reply within `smtp.timeout`.                           |
+
+`accepted` on the result is whether any probe was. The outcome is data,
+not a failure: a domain whose every probe is refused is still
+`{ ok: true }`. `code` is the last reply's, and `message` is for people.
+
+**Ports.** The default is 25 only: it's where MX hosts take mail from other
+servers. 587 and 465 are for clients submitting mail to their own provider,
+often on other hosts, so an MX that doesn't answer there says little. 0.0.1
+probed all three and added points for each. `smtp.ports` takes any ports;
+465 speaks TLS from the first byte, without checking the certificate, since
+a probe asks whether a server answers, not who it is, and sends nothing
+secret.
+
+**EHLO.** The name sent is the address literal of the connection's local
+end (`[192.0.2.1]`, `[IPv6:2001:db8::1]`), the form RFC 5321 §4.1.4 gives a
+client without a meaningful name, which tells the server nothing it can't
+already see. `smtp.ehloName` replaces it, and must be printable ASCII
+without spaces, so it can't smuggle in another command.
+
+**One host at a time.** With `smtp.untilAccepted`, the hosts are tried one
+after another in preference order, each on every port at once, and the
+probe stops at the first host that accepts. `accepted` means the same, and
+`probes` lists only the hosts tried. It takes fewer connections, which
+matters to a caller probing many domains from a network that throttles
+port 25, and longer when hosts don't answer.
+
+**Budgets and abort.** The lookups keep their own budgets; each probe then
+has `smtp.timeout` (10 s), since some servers pause before greeting. An
+abort closes every connection and rejects with the signal's `reason`.
+
+**Where it runs.** Many networks block outbound port 25, home ISPs and cloud
+hosts among them. From there every probe comes back `timeout` or
+`unreachable` whatever the domain does, so read those as "couldn't connect
+from here", not "the domain is dead". The package's tests only talk to
+servers on the loopback; nothing in CI probes a real mail server.
+
 ## Scoring
 
 Scoring is opt-in and separate from `checkDns` (N1), because it answers a
@@ -216,8 +333,8 @@ question is a measurement, so the score is defined as one:
 ```ts
 export function scoreDns(
   emailOrDomain: string,
-  options?: DnsOptions & { model?: DnsScoreModel },
-): Promise<DnsScore>;
+  options?: DnsOptions,
+): Promise<Result<DnsScore>>;
 
 export interface DnsScore {
   /**
@@ -227,8 +344,8 @@ export interface DnsScore {
    */
   probability: number;
   signals: DnsSignals;
-  /** Per-signal log-odds contributions, so a score can be explained. */
-  contributions: Partial<Record<keyof DnsSignals, number>>;
+  /** Per-feature log-odds contributions, so a score can be explained. */
+  contributions: Partial<Record<ScoreFeature, number>>;
   model: { id: string; version: string };
 }
 
@@ -237,15 +354,44 @@ export interface DnsScoreModel {
   version: string;
   intercept: number;
   /** Fitted log-odds coefficients, not hand-chosen points. */
-  coefficients: Partial<Record<keyof DnsSignals, number>>;
+  coefficients: Partial<Record<ScoreFeature, number>>;
 }
+
+/** A signal, or `knownProvider` / `multipleMx`, derived from `mxHosts`. */
+export type ScoreFeature = keyof DnsSignals | 'knownProvider' | 'multipleMx';
 ```
+
+Input `checkDns` fails, `scoreDns` fails the same way: a domain the RFCs
+say can't receive mail, or one whose lookups failed, has no signals to
+score. No probe is made.
 
 **What the number means.** `probability` estimates P(connection accepted)
 given the DNS signals, via `logistic(intercept + Σ coefficientᵢ · signalᵢ)`.
+A `true` signal is 1, and `false` or `undefined` (a failed lookup) is 0;
+`mxHosts` is the number of hosts, `multipleMx` is whether there is more
+than one, and `knownProvider` is whether the MX matches a provider in
+`@email-utils/classifier/providers` — the match `detectProviderByMx` makes.
 It is not a point total and there is no magic pass mark. Callers pick a
 threshold from the published precision/recall table for the tolerance they
 want, rather than comparing against a `validScore` constant.
+
+**Two bundled models.** `scoreModel` names one of two fits of the same
+corpus and split, or takes a model of your own, whose calibration is then
+yours. The default, `dns-reachability`, counts `knownProvider` besides the
+DNS signals: domains whose MX the registry knows accepted almost without
+exception in the corpus, which makes it the strongest feature and, in
+practice, the only way to a score above ~0.9. `dns-only` reads the DNS
+signals alone, for callers who don't want scores to move as the registry
+grows (N8). Held-out examples — [the 1.0.0 report](https://github.com/email-utils/validator-dns/blob/main/model/report-1.0.0.md)
+has the full precision/recall and calibration tables:
+
+| Domain looks like           | dns-reachability | dns-only | Probe found |
+| --------------------------- | ---------------- | -------- | ----------- |
+| MX on Google Workspace, SPF | 99%              | 90%      | accepted    |
+| MX on Microsoft 365, SPF    | 99%              | 81%      | accepted    |
+| Self-hosted, one MX, SPF    | 75%              | 81%      | accepted    |
+| Self-hosted, one MX, no SPF | 62%              | 70%      | accepted    |
+| No MX, A records only       | 2%               | 2%       | timeout     |
 
 **Where the coefficients come from.** They are fitted by logistic regression
 on a labeled corpus, shipped as versioned data, and never invented. Logistic
@@ -253,13 +399,13 @@ regression is what makes the number interpretable _and_ handles the fact that
 the signals are heavily correlated — `hasMx`, `hasA`, and `hasSpf` co-occur,
 so the additive point scheme in 0.0.1 double-counted the same evidence.
 
-**Where the labels come from.** Features are DNS-only; labels are SMTP
-reachability — connect and `EHLO` against the domain's MX hosts, recorded as
-accepted or refused. The probe never issues `RCPT TO`, so this stays clear of
-the mailbox-probing non-goal in
+**Where the labels come from.** Features come from DNS and the provider
+registry; labels are SMTP reachability — `probeSmtp` on port 25 against the
+domain's MX hosts, with `accepted` as the label. The probe never issues
+`RCPT TO`, so this stays clear of the mailbox-probing non-goal in
 [meta#18](https://github.com/email-utils/meta/issues/18). Because the label
 comes from a channel the scorer does not use as a feature, there is no
-leakage: the model predicts reachability from DNS alone.
+leakage: the models predict reachability without probing.
 
 **What ships with the model.** Every released model version publishes its
 corpus size and composition, the fit, held-out precision/recall at candidate
@@ -269,14 +415,27 @@ Refitting changes outputs for unchanged input, so a new model version is a
 for a major cycle. Supplying `scoreModel`/`model` yourself is supported and
 explicitly voids the calibration guarantee.
 
-**If the corpus is not ready, scoring does not ship.** Numbers presented as
-probabilities must be measured; shipping hand-tuned weights behind this API
-would be worse than shipping `checkDns` and `signals` alone and adding
-`scoreDns` in a later minor (N6).
+**The corpus.** `scripts/corpus.ts` in validator-dns samples domains
+uniformly from a [Tranco](https://tranco-list.eu/) top-1M list, runs
+`checkDns` on each, and probes the ones that pass. It's run by hand, never
+in CI. A lookup that fails isn't recorded, and a domain that didn't accept
+is only recorded once control probes of domains that accepted earlier
+succeed after it, so a dropped or throttled connection can't pass for a
+refusal; a rerun carries on where the last one stopped. `scripts/fit.ts`
+fits both models on 80% of the domains, chosen by a hash of the name, and
+measures them on the rest; rows whose only replies were 4xx (greylisting:
+"try again later") are excluded, since they say nothing about whether the
+domain accepts. The corpus, the models, and each version's report (corpus
+composition, the classifier version the fit matched against, coefficients,
+held-out precision/recall, calibration, and worked examples) are in the
+repo's
+[`model/`](https://github.com/email-utils/validator-dns/tree/main/model);
+[`METHODOLOGY.md`](https://github.com/email-utils/validator-dns/blob/main/model/METHODOLOGY.md)
+there explains the method and the math from first principles.
 
-Optional SMTP port probes ([validator-dns#10](https://github.com/email-utils/validator-dns/issues/10)) run in parallel and are awaited. They are a
-diagnostic signal for callers who opt in — and the label source for fitting —
-but they are not DNS features and do not enter the model (N3).
+Numbers presented as probabilities must be measured: no hand-tuned weights
+ship behind this API (N6). The probes are the label source, not features,
+and do not enter the model (N3).
 
 ## Reason codes
 
@@ -290,8 +449,11 @@ The `EmailDnsValidator` class, default export, and score-thresholded
 `validate(): Promise<boolean>` are replaced by `checkDns` (RFC rules) and
 `scoreDns` (opt-in, calibrated). The `a`/`ns`/`spf`/`port`/`mx`/`validScore`
 weight config is gone: NS no longer hard-fails subdomains, and weights are
-fitted rather than configured. SPF is parsed from joined TXT chunks, AAAA is
-looked up, and port probes are awaited. `isGSuiteMX` and
+fitted rather than configured. SPF is parsed from joined TXT chunks, and
+AAAA is looked up. Port probes move to the opt-in `probeSmtp`, which awaits
+them (0.0.1 never did), probes port 25 alone by default rather than
+`smtpPorts` 25, 465, and 587, and reads the greeting and EHLO reply rather
+than counting a bare connection. `isGSuiteMX` and
 `isDefaultNamecheapMX` become one `detectProviderByMx` returning a
 `ProviderId` in a result, which fails rather than answering `false` when
 the MX lookup fails. See
@@ -305,7 +467,12 @@ the MX lookup fails. See
 - **N1 — Scoring exposure.** **(a) `checkDns` from RFC rules only, scoring as
   a separate opt-in `scoreDns` — recommended**: they answer different
   questions, and [validator-dns#10](https://github.com/email-utils/validator-dns/issues/10) already calls scoring opt-in; (b) one function whose
-  `scoring` option changes the return type.
+  `scoring` option changes the return type. Amended for validator-dns#10:
+  `scoreDns` returns `Result<DnsScore>`, failing as `checkDns` does, since
+  a domain that fails the RFC rules has no signals to score; the model is
+  `scoreModel` on `DnsOptions` for both it and a validator, naming a
+  bundled fit or supplying your own; and a validator's `score` takes a
+  per-call `signal`.
 - **N2 — Signals surface.** **(a) expose `DnsSignals` on the success value —
   recommended**: #7 requires correct signals anyway and callers need them;
   (b) keep them internal. Amended for validator-dns#7: `hasA`, `hasAaaa`,
@@ -316,7 +483,11 @@ the MX lookup fails. See
   [#10](https://github.com/email-utils/validator-dns/issues/10) specifies,
   and without it there is no label channel that avoids `RCPT TO`; (b) drop
   probing from v1, which contradicts validator-dns#10 and leaves scoring
-  with no label source.
+  with no label source. Amended for validator-dns#10: probing is its own
+  `probeSmtp` and validator method, so `DnsSignals` stays DNS-only; a probe
+  reads the greeting and EHLO reply and sends QUIT, since a bare
+  connection can't tell a server that answers from one that refuses with
+  554; and it probes port 25 alone by default (see Probes).
 - **N4 — Cache and resolver surface.** **(a) factory-internal cache with an
   injectable minimal resolver — recommended**, per [validator-dns#8](https://github.com/email-utils/validator-dns/issues/8); (b) expose the cache
   as its own primitive. Amended for validator-dns#8: `checkDns` shares one
@@ -346,8 +517,21 @@ the MX lookup fails. See
   an uncalibrated probability is a false claim, and adding the export later
   is non-breaking; (b) ship `scoreDns` in v1 with hand-tuned weights
   documented as provisional; (c) ship it returning `signals` plus a raw
-  point total with no probability claim.
+  point total with no probability claim. Resolved for validator-dns#10:
+  the corpus was collected and the model fitted in the same issue, so
+  `scoreDns` ships in v1 with a measured model.
 - **N7 — Threshold guidance.** **(a) publish a precision/recall table per
   model version and let callers pick — recommended**: the right cut depends
   on whether false accepts or false rejects cost more; (b) ship a single
   recommended `isLikelyDeliverable` boolean at a fixed cut.
+- **N8 — The registry in the score.** **(a) `dns-reachability` computes
+  `knownProvider` from the installed classifier's registry — recommended**:
+  one code path, the very match `detectProviderByMx` makes, and a registry
+  addition only moves domains from the middle of the range toward the ~99%
+  measured for the registry's providers, since providers are added
+  precisely because they are major hosted-mail operators. The classifier
+  version the fit matched against is recorded in the model report. (b) Pin
+  a snapshot of the patterns into the model, which would let the score
+  disagree with `detectProviderByMx` for the same domain. Callers who want
+  a score the registry can never move pick the bundled `dns-only` model
+  instead.
