@@ -296,9 +296,12 @@ not a failure: a domain whose every probe is refused is still
 servers. 587 and 465 are for clients submitting mail to their own provider,
 often on other hosts, so an MX that doesn't answer there says little. 0.0.1
 probed all three and added points for each. `smtp.ports` takes any ports;
-465 speaks TLS from the first byte, without checking the certificate, since
-a probe asks whether a server answers, not who it is, and sends nothing
-secret.
+465 speaks TLS from the first byte, and the certificate is checked as
+Node checks it by default: a server whose certificate doesn't verify is
+`refused`, with the TLS error in `message`. Skipping the check would have
+cost little, since a probe sends nothing secret, but a library that turns
+off certificate validation hands that finding to every scanner that reads
+it.
 
 **EHLO.** The name sent is the address literal of the connection's local
 end (`[192.0.2.1]`, `[IPv6:2001:db8::1]`), the form RFC 5321 §4.1.4 gives a
