@@ -18,7 +18,7 @@ position exists, the result's `index` points at the offending character.
 | ------------------------------- | -------------------------------------------------------------------------------------- |
 | `syntax.address.empty`          | The input is the empty string.                                                         |
 | `syntax.address.no_at`          | No `@` separator in the address.                                                       |
-| `syntax.address.too_long`       | The whole address exceeds 254 characters, not counting comments or folding whitespace. |
+| `syntax.address.too_long`       | Over `maxLength` as written, or 254 characters without comments or folding whitespace. |
 | `syntax.local.empty`            | Nothing before the `@`.                                                                |
 | `syntax.local.too_long`         | The local part exceeds 64 characters.                                                  |
 | `syntax.local.invalid_char`     | A character the active preset does not allow in the local part.                        |
