@@ -355,8 +355,9 @@ export interface DnsScore {
 export interface DnsScoreModel {
   id: string;
   version: string;
+  /** Within ±1e6. */
   intercept: number;
-  /** Fitted log-odds coefficients, not hand-chosen points. */
+  /** Fitted log-odds coefficients, not hand-chosen points; each within ±1e6. */
   coefficients: Partial<Record<ScoreFeature, number>>;
 }
 
@@ -416,7 +417,11 @@ thresholds, and a reliability check that the probabilities are calibrated.
 Refitting changes outputs for unchanged input, so a new model version is a
 `feat` at minimum, never a `fix`, and the previous version stays importable
 for a major cycle. Supplying `scoreModel`/`model` yourself is supported and
-explicitly voids the calibration guarantee.
+explicitly voids the calibration guarantee. Its intercept and coefficients
+must be within ±1e6, or it throws a `TypeError`: a fitted model's are single
+digits, and the bound keeps the log-odds finite, where terms that overflow
+to `Infinity` and `-Infinity` would make the probability `NaN`
+([validator-dns#30](https://github.com/email-utils/validator-dns/issues/30)).
 
 **The corpus.** `scripts/corpus.ts` in validator-dns samples domains
 uniformly from a [Tranco](https://tranco-list.eu/) top-1M list, runs
