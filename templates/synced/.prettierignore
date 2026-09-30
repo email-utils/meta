@@ -2,6 +2,7 @@
 dist
 coverage
 .reports
+.cache
 CHANGELOG.md
 
 # Machine-generated lockfile

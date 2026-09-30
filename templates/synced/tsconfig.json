@@ -15,10 +15,13 @@
     "isolatedDeclarations": true,
     "verbatimModuleSyntax": true,
     "resolveJsonModule": true,
+    // Scripts run under Node's type stripping, which needs .ts import paths;
+    // noEmit makes this safe.
+    "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "noEmit": true
   },
-  // tests/ and bench/ are listed because tsc is the only thing that
+  // test/, bench/, and scripts/ are listed because tsc is the only thing that
   // typechecks them: Vitest strips types rather than checking them.
-  "include": ["src", "test", "bench", "*.config.ts"]
+  "include": ["src", "test", "bench", "scripts", "*.config.ts"]
 }
