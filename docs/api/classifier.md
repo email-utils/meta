@@ -13,12 +13,12 @@ npm install @email-utils/classifier
 
 ```ts
 import {
-  classify,
   isRoleAccount,
   suggestCorrection,
   getProvider,
 } from '@email-utils/classifier';
 import { isDisposable } from '@email-utils/classifier/disposable';
+import { classify } from '@email-utils/classifier/classify';
 
 classify('ceo@mailinator.com');
 // { provider: undefined, disposable: true, role: true, suggestion: undefined }
@@ -32,11 +32,6 @@ getProvider('ada@googlemail.com'); // { id: 'gmail', name: 'Gmail', … }
 ## Exports
 
 ```ts
-export function classify(
-  email: string | ParsedAddress,
-  options?: ClassifyOptions,
-): Classification;
-
 export function isRoleAccount(email: string | ParsedAddress): boolean;
 export function suggestCorrection(
   email: string | ParsedAddress,
@@ -44,22 +39,6 @@ export function suggestCorrection(
 export function getProvider(
   email: string | ParsedAddress,
 ): ProviderInfo | undefined;
-
-export function createClassifier(options?: ClassifyOptions): {
-  classify(email: string | ParsedAddress): Classification;
-  isDisposable(email: string | ParsedAddress): boolean;
-  isRoleAccount(email: string | ParsedAddress): boolean;
-  suggestCorrection(email: string | ParsedAddress): string | undefined;
-  getProvider(email: string | ParsedAddress): ProviderInfo | undefined;
-};
-
-export interface Classification {
-  provider?: ProviderInfo;
-  disposable: boolean;
-  role: boolean;
-  /** A likely intended address when the domain looks like a typo. */
-  suggestion?: string;
-}
 
 /** Stable provider identifier, e.g. 'gmail', 'google-workspace', or 'microsoft365'. */
 export type ProviderId = string;
@@ -104,8 +83,8 @@ export interface ProviderInfo {
 
 The heavy data sets live in subpaths
 ([conventions D10](./conventions.md#modules)). The root re-exports
-`getProvider`, but not `isDisposable`, so importing the root never loads the
-disposable-domain list:
+`getProvider`, but not `isDisposable`, `classify`, or `createClassifier`, so
+importing the root never loads the disposable-domain list:
 
 ```ts
 // Provider registry only
@@ -115,8 +94,73 @@ import { getProvider, providers } from '@email-utils/classifier/providers';
 import { isDisposable } from '@email-utils/classifier/disposable';
 // export function isDisposable(email: string | ParsedAddress): boolean;
 
+// Every check at once; loads the disposable-domain set
+import {
+  classify,
+  createClassifier,
+  defaultIgnore,
+} from '@email-utils/classifier/classify';
+
 // Where each registry fact comes from, for the docs' support matrix
 import { providerSources } from '@email-utils/classifier/sources';
+```
+
+`/classify` exports `classify` and the `createClassifier` factory. `classify`
+parses a string once and runs the four checks on it; every key is present,
+so an address the classifier knows nothing about is
+`{ provider: undefined, disposable: false, role: false, suggestion: undefined }`.
+
+```ts
+export function classify(
+  email: string | ParsedAddress,
+  options?: ClassifyOptions,
+): Classification;
+
+export function createClassifier(options?: ClassifyOptions): Classifier;
+
+export interface ClassifyOptions {
+  /**
+   * Domains that `suggestCorrection` corrects toward, ahead of the common
+   * mailbox domains, and never away from, such as your own company's.
+   * Compared without case.
+   */
+  domains?: readonly string[] | undefined;
+  /**
+   * Domains that are never corrected and never corrected toward. Replaces
+   * `defaultIgnore`; spread it in to keep them.
+   */
+  ignore?: readonly string[] | undefined;
+  /** The layout key distance is measured on; `'qwerty'` by default. */
+  keyboard?: Keyboard | undefined;
+  /** The most edits a typo may be from a known domain; 1 by default. */
+  maxEdits?: 0 | 1 | 2 | undefined;
+  /**
+   * How many keys apart a typed letter may be from the intended one and
+   * still count as one edit; 1 (neighbors) by default, `Infinity` for any.
+   */
+  maxKeyDistance?: number | undefined;
+}
+
+export type Keyboard = 'qwerty' | 'qwertz' | 'azerty';
+
+/** The real domains near a common one that are never corrected by default. */
+export const defaultIgnore: readonly string[]; // ['mail.com', 'email.com']
+
+export interface Classification {
+  provider: ProviderInfo | undefined;
+  disposable: boolean;
+  role: boolean;
+  /** A likely intended address when the domain looks like a typo. */
+  suggestion: string | undefined;
+}
+
+export interface Classifier {
+  classify(email: string | ParsedAddress): Classification;
+  isDisposable(email: string | ParsedAddress): boolean;
+  isRoleAccount(email: string | ParsedAddress): boolean;
+  suggestCorrection(email: string | ParsedAddress): string | undefined;
+  getProvider(email: string | ParsedAddress): ProviderInfo | undefined;
+}
 ```
 
 `/sources` holds no code. It exports `providerSources`, which maps each
@@ -146,6 +190,9 @@ export const providerSources: Readonly<
 - Input is a raw string or a `ParsedAddress` from validator-syntax. Strings
   are parsed internally with the `practical` preset; an unparsable string
   classifies as `{ disposable: false, role: false }` with no provider (C2).
+  The one exception is `suggestCorrection`, which skips the IANA TLD check,
+  since a mistyped TLD like `.con` is what it's there to fix. So
+  `classify('ada@gmail.con')` knows nothing but the suggestion.
 - Lookups return plain data, not `{ ok }` results — classification is not
   pass/fail, and forcing the result shape onto it would be false symmetry
   (C3). The classifier therefore emits no reason codes in v1; the
@@ -222,13 +269,62 @@ disposable.
 - **Parent domains:** upstream lists registrable domains, so the check walks
   from the full domain down to two labels. No TLD is ever matched.
 - **Loading:** the list is one string in the `/disposable` entry, split into
-  a set on the first call. The root entry doesn't import it. How `classify`
-  and `createClassifier` get the disposable check without loading the list
-  from the root is open until they're built.
+  a set on the first call. The root entry doesn't import it; `classify` and
+  `createClassifier`, which need it, are in their own `/classify` entry for
+  that reason.
 - **Refresh:** a weekly workflow in the classifier repo updates the list and
   opens a `fix(data)` PR that merges itself once the PR gate passes, so each
   change ships as a patch release. The gate's tests fail if a provider
   registry domain appears on the list, which leaves that PR for a person.
+
+### Typo suggestions
+
+`suggestCorrection` returns the address with its domain corrected when the
+domain looks like a slip for a common mailbox domain, and `undefined`
+otherwise. The local part is kept as written; the domain comes back in
+lowercase.
+
+- **Targets:** about fifty of the registry's widely used domains, most used
+  first, since a tie goes to the earlier one: `ada@hotmail.dr` becomes
+  `hotmail.fr` rather than `hotmail.de`. Most of Fastmail's alias domains
+  aren't targets, or `gmail.co.uk` would become `fmail.co.uk`.
+  `createClassifier({ domains })` adds targets ahead of these.
+- **Distance:** optimal string alignment, where an insertion, a deletion,
+  or two neighboring letters swapped is one edit, so `gamil.com` is one
+  edit from `gmail.com`. A substitution is one edit when the two keys are
+  at most `maxKeyDistance` apart (1, touching, by default) and two
+  otherwise, the same as a deletion and an insertion: `gotmail.com` is one
+  edit from `hotmail.com` (G beside H), but `lastmail.com`, a disposable
+  service, is two from `fastmail.com` (L five keys from F). Keys touch in
+  their row and diagonally above and below, on the `keyboard` layout.
+  Letters and digits are on each layout; any other character substitutes
+  only with `maxKeyDistance: Infinity`.
+- **Edit limit:** a domain within `maxEdits` of a target (1 by default) is
+  taken for the closest, the earlier on a tie. At 2, `yopmail.com`, a
+  disposable service of its own, would become `ymail.com`; at 0 only TLDs
+  are fixed. Names of three letters or fewer (`me.com`, `gmx.de`) are never
+  guessed at, since they're one edit from too many real domains.
+- **TLDs:** a TLD outside the IANA set that's a common slip for `.com`,
+  `.net`, or `.org`, like `.con`, `.cmo`, or `.nte`, is fixed on any
+  domain, before the distance is measured: `ada@gmial.con` becomes
+  `ada@gmail.com`, and `ada@example.con` becomes `ada@example.com`.
+- **Never corrected:** any registry domain, and subdomains that
+  `getProvider` matches; the `domains` option; the `ignore` option, which
+  are never corrected toward either; and domain literals and dotless or
+  internationalized domains. `ignore` defaults to `defaultIgnore`,
+  `mail.com` and `email.com`, which are one edit from `gmail.com`, and
+  replaces it when given: `ignore: [...defaultIgnore, 'example.com']`
+  keeps them.
+- **Disposable typos:** some typo-squatted domains, like `gmial.com`, are
+  on the disposable list, so `classify` can report an address as both
+  disposable and a likely typo. The two checks don't consult each other; a
+  form that rejects disposable addresses may want to offer the suggestion
+  first. The classifier's tests pin which listed domains get a suggestion,
+  so a list refresh that adds one near a target waits for a person.
+
+Adding a target, a TLD fix, or a `defaultIgnore` domain, or changing a
+layout, changes which addresses get a suggestion, so it's a minor release,
+like a new provider. Changing a default option is breaking.
 
 ### Providers
 

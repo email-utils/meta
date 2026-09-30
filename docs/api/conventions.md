@@ -101,6 +101,7 @@ the client, DNS on the server. (D7)
   Node-only. (scaffold)
 - Subpath entries exist only where they carry heavy tree-shakeable data:
   `@email-utils/classifier/providers` and `@email-utils/classifier/disposable`,
+  `@email-utils/classifier/classify`, which composes the disposable check,
   plus `@email-utils/validator-syntax/fixtures`, the test corpus that
   dependents and the docs read, and `@email-utils/classifier/sources`, the
   registry's citations. Everything else lives at the root. (D10)
@@ -172,4 +173,6 @@ merge.
   exactly as it builds alone. Amended for classifier#7: the classifier also ships
   `/sources`, the page and verified date behind each registry fact, for the
   docs' support matrix (meta#18). It's data kept off `/providers`, so
-  callers of the registry don't ship the URLs.
+  callers of the registry don't ship the URLs. Amended for classifier#10: `classify` and
+  `createClassifier` are `@email-utils/classifier/classify`, since they run
+  the disposable check and so load its list, which the root never does.
