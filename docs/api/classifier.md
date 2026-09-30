@@ -14,11 +14,11 @@ npm install @email-utils/classifier
 ```ts
 import {
   classify,
-  isDisposable,
   isRoleAccount,
   suggestCorrection,
   getProvider,
 } from '@email-utils/classifier';
+import { isDisposable } from '@email-utils/classifier/disposable';
 
 classify('ceo@mailinator.com');
 // { provider: undefined, disposable: true, role: true, suggestion: undefined }
@@ -37,7 +37,6 @@ export function classify(
   options?: ClassifyOptions,
 ): Classification;
 
-export function isDisposable(email: string | ParsedAddress): boolean;
 export function isRoleAccount(email: string | ParsedAddress): boolean;
 export function suggestCorrection(
   email: string | ParsedAddress,
@@ -103,16 +102,18 @@ export interface ProviderInfo {
 
 ### Subpath entries
 
-The heavy data sets are tree-shakeable via subpaths
-([conventions D10](./conventions.md#modules)); the root re-exports the
-functions without forcing both data sets on every caller:
+The heavy data sets live in subpaths
+([conventions D10](./conventions.md#modules)). The root re-exports
+`getProvider`, but not `isDisposable`, so importing the root never loads the
+disposable-domain list:
 
 ```ts
 // Provider registry only
 import { getProvider, providers } from '@email-utils/classifier/providers';
 
-// Disposable-domain set only
+// Disposable-domain set only; the root doesn't re-export it
 import { isDisposable } from '@email-utils/classifier/disposable';
+// export function isDisposable(email: string | ParsedAddress): boolean;
 
 // Where each registry fact comes from, for the docs' support matrix
 import { providerSources } from '@email-utils/classifier/sources';
@@ -204,6 +205,30 @@ folding separators, so `no-reply`, `no_reply`, and `noreply` are all listed:
 
 Adding or removing a name changes which addresses count, so it's a minor
 release, like a new provider.
+
+### Disposable domains
+
+`isDisposable` is true when the address's domain, or a parent of it, is a
+known throwaway-mailbox domain: `a@mailinator.com` and `a@x.mailinator.com`
+both are. The domain is compared without case, and an internationalized
+domain by its A-label. A domain literal or a dotless domain is never
+disposable.
+
+- **Source:** the
+  [disposable-email-domains](https://github.com/disposable-email-domains/disposable-email-domains)
+  blocklist (CC0 1.0), vendored into the package. The upstream commit is at
+  the top of `src/disposable/data.ts`, and `THIRD_PARTY_NOTICES.md`, which
+  ships with the package, attributes it.
+- **Parent domains:** upstream lists registrable domains, so the check walks
+  from the full domain down to two labels. No TLD is ever matched.
+- **Loading:** the list is one string in the `/disposable` entry, split into
+  a set on the first call. The root entry doesn't import it. How `classify`
+  and `createClassifier` get the disposable check without loading the list
+  from the root is open until they're built.
+- **Refresh:** a weekly workflow in the classifier repo updates the list and
+  opens a `fix(data)` PR that merges itself once the PR gate passes, so each
+  change ships as a patch release. The gate's tests fail if a provider
+  registry domain appears on the list, which leaves that PR for a person.
 
 ### Providers
 
