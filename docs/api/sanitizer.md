@@ -63,7 +63,8 @@ export function createSanitizer(options?: NormalizeOptions): {
 export interface NormalizedEmail {
   /**
    * Uniqueness key: two inputs that reach the same mailbox get the same key.
-   * Store and compare it; never send mail to it.
+   * Store and compare it; never send mail to it. Normalizing it again, with
+   * the same options, gives it back.
    */
   key: string;
   /**
@@ -122,6 +123,15 @@ the input was. The forms differ in how much they strip:
   dots and subaddress tags are left alone (see
   [Subaddresses](#subaddresses)). `removePeriods`/`removeSubaddress`
   override the provider's rules in either direction (Z2).
+- **`key` is also an address the same options parse.** Normalizing a key
+  again gives the same key, so stored keys can go through `normalizeEmail`
+  again, in a migration say, without changing. Where the rules would leave
+  a dot at either end or two together, it's dropped (`a.+x@outlook.com`
+  keys as `a@outlook.com`), and where they'd leave nothing, the local part
+  is kept as it was (`-@yandex.ru`).
+- **Surrounding whitespace is spaces, tabs, CRs, and LFs,** the whitespace
+  validator-syntax knows. Unicode spaces such as U+00A0 stay, since an RFC
+  6531 local part may start or end with one.
 - **`address` is what the person typed, tidied.** Only the domain is
   lowercased, since domains are case-insensitive. The local part keeps its
   case, the subaddress tag keeps routing to the person's filters, and
@@ -148,7 +158,8 @@ it (Z6).
   mailbox left.
 - **Subdomain addressing folds into the local part.** On providers with
   `subdomainAddressing`, `news@ada.fastmail.com` delivers to
-  `ada@fastmail.com`, and that's its key.
+  `ada@fastmail.com`, and that's its key. Only an ASCII subdomain folds,
+  since mailbox names there are ASCII: `x@ü.fastmail.com` keeps its domain.
 - **Unknown domains keep their tags.** `+` can be a literal part of a
   mailbox name, and merging two different people under one key would
   wrongly block the second one from signing up. `removeSubaddress: true`
