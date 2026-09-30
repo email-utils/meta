@@ -102,9 +102,10 @@ the client, DNS on the server. (D7)
 - Subpath entries exist only where they carry heavy tree-shakeable data:
   `@email-utils/classifier/providers` and `@email-utils/classifier/disposable`,
   `@email-utils/classifier/classify`, which composes the disposable check,
-  plus `@email-utils/validator-syntax/fixtures`, the test corpus that
-  dependents and the docs read, and `@email-utils/classifier/sources`, the
-  registry's citations. Everything else lives at the root. (D10)
+  plus `@email-utils/validator-syntax/fixtures` and
+  `@email-utils/sanitizer/fixtures`, the test corpora that dependents and the
+  docs read, and `@email-utils/classifier/sources`, the registry's
+  citations. Everything else lives at the root. (D10)
 - No package ever writes to the console. (epic)
 
 ## Forward compatibility
@@ -176,3 +177,7 @@ merge.
   callers of the registry don't ship the URLs. Amended for classifier#10: `classify` and
   `createClassifier` are `@email-utils/classifier/classify`, since they run
   the disposable check and so load its list, which the root never does.
+  Amended for sanitizer#19: the sanitizer also ships `/fixtures`, its corpus
+  and `previewSanitizerOptions`, on the same terms as validator-syntax's: it's
+  test and docs data, and it imports `normalizeEmail` from the root entry,
+  so the root stays exactly as it builds alone.
