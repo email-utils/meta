@@ -182,6 +182,73 @@ The `sanitizer.*` namespace in the
 [catalogue](./reason-codes.md#sanitizer): just
 `sanitizer.address.unparsable` in v1.
 
+## Fixtures
+
+`@email-utils/sanitizer/fixtures` publishes the corpus the package is tested
+against, so dependents can check they key addresses the same way, and so
+these docs can preview a configuration on real addresses. It has a fixture
+for each row of the [Behavior](#behavior) table and each rule under
+[Subaddresses](#subaddresses): Gmail dots, the googlemail.com alias, `+`
+and `-` tags, Fastmail subdomains, Workspace against Gmail, comments,
+quotes, and inputs that fail to parse.
+
+Each fixture has the `input`, a description, and the `expected` result
+under the default options: `ok` with `key`, `address`, `envelope`, and
+`provider`, or `ok: false` with the `reason`. Some features only show with
+an option: the default `practical` syntax rejects comments and quotes, no
+registry provider splits on `-`, and a Workspace domain needs the
+`provider` option. Those fixtures also carry `with`, the options that turn
+the feature on and the result under them.
+
+```ts
+import { sanitizerFixtures } from '@email-utils/sanitizer/fixtures';
+
+for (const { input, expected, with: other } of sanitizerFixtures) {
+  expected; // { ok: true, key, address, envelope, provider? } | { ok: false, reason }
+  other?.options; // e.g. { syntax: { allowComments: true } }
+  other?.expected; // the result under those options
+}
+```
+
+The subpath is test and docs data. The fixture set may grow in any minor
+release; a changed expectation follows the package's own semver.
+
+### Previewing a configuration
+
+`previewSanitizerOptions` runs addresses through `createSanitizer(options)`
+and splits them into the ones it normalizes, with their forms, and the ones
+it can't, each list in input order. It normalizes the corpus by default, or
+the addresses you pass. The docs site's configuration preview
+([meta#82](https://github.com/email-utils/meta/issues/82)) is built on it.
+
+```ts
+import { previewSanitizerOptions } from '@email-utils/sanitizer/fixtures';
+
+export function previewSanitizerOptions(
+  options?: NormalizeOptions,
+  addresses?: readonly string[], // the corpus's inputs by default
+): SanitizerPreview;
+
+export interface SanitizerPreview {
+  valid: ValidSanitizerEntry[]; // { input, description?, key, address, envelope, provider?, changed }
+  invalid: InvalidSanitizerEntry[]; // { input, description?, reason, message?, changed }
+}
+
+previewSanitizerOptions({ provider: 'google-workspace' }, [
+  'A.da+news@mycompany.com',
+]).valid;
+// [{ input: 'A.da+news@mycompany.com', key: 'a.da@mycompany.com', …, changed: true }]
+```
+
+`changed` marks the inputs the options move: those the default options
+would reject, accept, or key differently. With no options, nothing is
+changed. The corpus is judged by your options alone; a fixture's `with`
+isn't applied. `description` comes from the corpus and is absent for your
+own addresses. Malformed options, or `addresses` that isn't an array of
+strings, throw `TypeError` before anything is normalized, and nothing is
+logged. The function lives in the subpath and imports `normalizeEmail` from
+the root entry, so the root entry's size is unchanged.
+
 ## Migrating from 0.0.1
 
 The `EmailSanitizer` class and default export are gone. `sanitize()` becomes
