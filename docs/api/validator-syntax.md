@@ -114,6 +114,12 @@ export interface SyntaxOptions {
    * and `rfc5322`, off elsewhere. Throws `TypeError` when `true` with `html5`.
    */
   allowIpLiteral?: boolean | undefined;
+  /**
+   * The longest input accepted, in UTF-16 code units (`email.length`).
+   * Longer input fails with `syntax.address.too_long` before it's scanned.
+   * A positive integer or `Infinity`. Default: 512 in every preset.
+   */
+  maxLength?: number | undefined;
 }
 
 // Each package declares the shared Result/ReasonCode shapes locally and
@@ -172,9 +178,16 @@ Where the presets differ (the corpus behind this is published as
 
 Every preset caps a domain label at 63 characters and the address at 254;
 all but `html5` cap the domain at 253. Comments and folding whitespace don't
-count toward the caps. The first failure wins: the local part is checked
-before the domain, each left to right, then the lengths, then a dotless
-domain, then the TLD.
+count toward the caps. The first failure wins: input longer than
+`maxLength` fails before anything else is checked; then the local part is
+checked before the domain, each left to right, then the lengths, then a
+dotless domain, then the TLD.
+
+`maxLength` bounds the input as written, in UTF-16 code units, comments and
+folding whitespace included. It defaults to 512 in every preset: twice the
+address cap, which leaves room for comments and folding whitespace.
+Checking it first rejects oversized input in constant time, however long it
+is. `Infinity` turns it off.
 
 ## Options
 
@@ -187,15 +200,16 @@ domain, then the TLD.
 | `allowUnicode`   | `boolean` | `false`                        | RFC 6531 local parts (S6).                    |
 | `allowIdn`       | `boolean` | `false`                        | U-label domains (S6).                         |
 | `allowIpLiteral` | `boolean` | `true` in `rfc5321`, `rfc5322` | Domain literals in any preset but `html5`.    |
+| `maxLength`      | `number`  | `512`                          | Longest input, in UTF-16 code units.          |
 
 Options are checked when they're passed: `createSyntaxValidator` checks them
 once, the top-level functions on every call. Anything malformed throws
 `TypeError` ([conventions D6](./conventions.md#decisions)): options that
-aren't an object, an unknown preset, a non-boolean override, `allowComments:
-true` with `rfc5321` or `html5`, `allowUnicode`, `allowIdn`, or
-`allowIpLiteral` `true` with `html5`, or a key that isn't one of the seven
-above, so a 0.0.1 option tree (`{ local: { … } }`) fails loudly instead of
-being ignored.
+aren't an object, an unknown preset, a non-boolean override, a `maxLength`
+that isn't a positive integer or `Infinity`, `allowComments: true` with
+`rfc5321` or `html5`, `allowUnicode`, `allowIdn`, or `allowIpLiteral` `true`
+with `html5`, or a key that isn't one of the eight above, so a 0.0.1 option
+tree (`{ local: { … } }`) fails loudly instead of being ignored.
 
 ### International addresses
 
@@ -214,8 +228,14 @@ the WHATWG regex: ASCII-only, with no literals.
   applies, with its bidi and joiner rules, or it fails with
   `syntax.domain.label_invalid`. So does a label that UTS #46 maps to plain
   ASCII (fullwidth `ｅｘａｍｐｌｅ`) or splits in two (`。`). The 63 and 253
-  caps apply to the A-label form. `ParsedAddress.domain` and `tld` keep the
-  labels as written; the TLD check knows IDN TLDs in both forms. A-labels
+  caps apply to the A-label form, so a U-label of more than 63 code points
+  fails without being converted: its A-label takes `xn--` and at least a
+  character for each one. Once the A-labels take the domain past 253, the
+  U-labels after that aren't converted either, and the domain fails with
+  `syntax.domain.too_long` unless something later fails first. Each label
+  is judged as it would be on its own: UTS #46's bidi rule never applies
+  across labels. `ParsedAddress.domain` and `tld` keep the labels as
+  written; the TLD check knows IDN TLDs in both forms. A-labels
   (`xn--bcher-kva`) are hostname labels, so every preset accepts them
   without the flag.
 - **`allowIpLiteral`** adds IPv4 and `IPv6:` address literals to

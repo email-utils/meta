@@ -203,9 +203,12 @@ punycoded before lookup, and unparsable input short-circuits without a query.
 `syntax` option. `allowIdn` is on by default, since looking up an IDN domain
 by its A-labels is part of the job; it stays off for the `html5` preset,
 which can't hold IDN domains. A string without an `@` is a bare domain.
-These fail with `dns.address.unparsable` before any lookup: input the syntax
-options reject, a domain literal (`[192.0.2.1]` has nothing to look up), and
-an `rfc5322` domain with atext no hostname can hold (`a#b.com`).
+These fail with `dns.address.unparsable` before any lookup: input longer
+than 512 characters, which isn't read at all (validator-syntax's default
+`maxLength`, twice the 254-character address cap, so comments and folding
+whitespace still fit), input the syntax options reject, a domain literal
+(`[192.0.2.1]` has nothing to look up), and an `rfc5322` domain with atext
+no hostname can hold (`a#b.com`).
 
 **Lookups.** MX, A, AAAA, and TXT are looked up at once; NS isn't, so a
 subdomain without NS records of its own passes. `ENODATA` and `ENOTFOUND`
