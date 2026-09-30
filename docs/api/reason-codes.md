@@ -44,9 +44,9 @@ empty in v1.
 
 Emitted by [`@email-utils/sanitizer`](./sanitizer.md).
 
-| Code                           | Meaning                                                          |
-| ------------------------------ | ---------------------------------------------------------------- |
-| `sanitizer.address.unparsable` | The input does not parse as an address, so nothing to normalize. |
+| Code                           | Meaning                                                                                                                                                                    |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sanitizer.address.unparsable` | The input does not parse as an address, so nothing to normalize. Input longer than the `syntax` options' `maxLength` (512 by default) fails with this before it's trimmed. |
 
 ## dns
 
@@ -54,11 +54,11 @@ Emitted by [`@email-utils/validator-dns`](./validator-dns.md). Node resolver
 error codes (`ENOTFOUND`, `ENODATA`, `ESERVFAIL`, …) are mapped onto these;
 the raw code is surfaced in `message`.
 
-| Code                     | Meaning                                                                   |
-| ------------------------ | ------------------------------------------------------------------------- |
-| `dns.address.unparsable` | The input is not an address or domain; no lookup was made.                |
-| `dns.domain.not_found`   | The domain does not resolve at all (`ENOTFOUND`/`ENODATA` on all types).  |
-| `dns.mx.none`            | No MX records, and no A/AAAA to serve as the implicit MX (RFC 5321 §5.1). |
-| `dns.mx.null`            | Null MX (RFC 7505): the domain explicitly receives no mail.               |
-| `dns.lookup.timeout`     | A lookup exceeded the configured timeout.                                 |
-| `dns.lookup.failed`      | The resolver failed for another reason (e.g. `SERVFAIL`).                 |
+| Code                     | Meaning                                                                                                                                                              |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dns.address.unparsable` | The input is not an address or domain; no lookup was made. Input longer than the `syntax` options' `maxLength` (512 by default) fails with this before it's trimmed. |
+| `dns.domain.not_found`   | The domain does not resolve at all (`ENOTFOUND`/`ENODATA` on all types).                                                                                             |
+| `dns.mx.none`            | No MX records, and no A/AAAA to serve as the implicit MX (RFC 5321 §5.1).                                                                                            |
+| `dns.mx.null`            | Null MX (RFC 7505): the domain explicitly receives no mail.                                                                                                          |
+| `dns.lookup.timeout`     | A lookup exceeded the configured timeout.                                                                                                                            |
+| `dns.lookup.failed`      | The resolver failed for another reason (e.g. `SERVFAIL`).                                                                                                            |
