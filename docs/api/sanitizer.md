@@ -128,10 +128,20 @@ the input was. The forms differ in how much they strip:
   again, in a migration say, without changing. Where the rules would leave
   a dot at either end or two together, it's dropped (`a.+x@outlook.com`
   keys as `a@outlook.com`), and where they'd leave nothing, the local part
-  is kept as it was (`-@yandex.ru`).
+  is kept as it was (`-@yandex.ru`). A very small custom `syntax.maxLength`
+  can break this, since some provider rules lengthen the domain: `me.com`
+  and `mac.com` key as `icloud.com`, and `ya.ru` as `yandex.ru`. At
+  `maxLength: 8`, `a@me.com` keys as `a@icloud.com`, 12 characters, which
+  then fails the limit. It can't happen at the default of 512: an address
+  is at most 254 characters, and these add at most 4.
 - **Surrounding whitespace is spaces, tabs, CRs, and LFs,** the whitespace
   validator-syntax knows. Unicode spaces such as U+00A0 stay, since an RFC
   6531 local part may start or end with one.
+- **Surrounding whitespace counts toward `maxLength`.** A string longer than
+  the `syntax` options' `maxLength` (512 by default) fails with
+  `sanitizer.address.unparsable` before it's trimmed, so oversized input is
+  rejected in constant time however it's padded. At the default, more than 258
+  characters of padding take a full-length address past it.
 - **`address` is what the person typed, tidied.** Only the domain is
   lowercased, since domains are case-insensitive. The local part keeps its
   case, the subaddress tag keeps routing to the person's filters, and
