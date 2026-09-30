@@ -1,7 +1,7 @@
 ---
 name: start
-description: Start work on an email-utils issue. Syncs `main` in the right repo, creates a `<type>/<issue#>-<slug>` branch named from the issue, assigns the issue to the person, moves it and its epic to In progress on the project board, then starts the work the issue describes. Use it whenever someone says they're starting, picking up, or working on an issue (`#34`, `validator-dns#13`, or an issue URL), asks for a branch for an issue, or asks what to name one.
-argument-hint: '[repo#]issue'
+description: Start work on an email-utils issue. With no issue given, picks the next one from the "v1.0 execution order" tracking issue in meta. Syncs `main` in the right repo, creates a `<type>/<issue#>-<slug>` branch named from the issue, assigns the issue to the person, moves it and its epic to In progress on the project board, then starts the work the issue describes. Use it whenever someone says they're starting, picking up, or working on an issue (`#34`, `validator-dns#13`, or an issue URL), asks what to work on next or to pick up the next issue, asks for a branch for an issue, or asks what to name one.
+argument-hint: '[[repo#]issue | next]'
 allowed-tools: Read, Bash(git rev-parse --show-toplevel), Bash(git remote get-url origin), Bash(git branch --show-current), Bash(git status --porcelain), Bash(gh api user --jq .login)
 ---
 
@@ -28,7 +28,8 @@ holding `mani.yaml`: the top level itself in meta, or its parent in a package
 clone. `mani.yaml` maps each clone's directory to its repo. The one oddity is
 `org-github/`, which is the `email-utils/.github` repo.
 
-Work out the repo, in this order:
+With no argument, or with `next`, pick the issue from the execution order
+(below) wherever they are. Otherwise, work out the repo in this order:
 
 1. The argument names it: `validator-dns#13`, `email-utils/sanitizer#10`, or
    an issue URL.
@@ -38,8 +39,8 @@ Work out the repo, in this order:
    also where people run things across the workspace, so ask which repo
    rather than assuming meta. List the projects from `mani.yaml`.
 
-If there's no issue number, ask for one. If they don't know it, list the
-repo's open issues (the REST list includes PRs; drop any with a
+If they named a repo but no issue number, ask for one. If they don't know it,
+list the repo's open issues (the REST list includes PRs; drop any with a
 `pull_request` key):
 
 ```sh
@@ -47,7 +48,45 @@ gh api 'repos/email-utils/<repo>/issues?state=open&per_page=50' \
   --jq '.[] | select(.pull_request | not) | "#\(.number) \(.title)"'
 ```
 
-Then read the issue:
+### Picking the next issue
+
+The order work happens in lives in an open meta issue titled "v1.0 execution
+order". Its body lists issues under Stage headings, one
+`email-utils/<repo>#<n>` reference per line, in the order to do them. The
+person reorders work by editing that body, so read it fresh every time and
+never rely on an order remembered from earlier:
+
+```sh
+gh api 'repos/email-utils/meta/issues?state=open&per_page=100' \
+  --jq '.[] | select(.pull_request | not) | select(.title == "v1.0 execution order") | {number, body}'
+```
+
+If nothing comes back, say that there's no tracking issue and ask which issue
+to start. Otherwise take the `email-utils/<repo>#<n>` references from the
+body, top to bottom. Read each one with the issue query below, and stop at the
+first one that's open, isn't an epic (`sub_issues` is 0), has `blocked_by` at
+0, and has no assignees. Along the way, skip:
+
+- closed issues, without comment;
+- issues assigned to the person, since that work is already under way. List
+  them as in flight;
+- issues that are blocked or assigned to someone else. Name each one with the
+  reason.
+
+Say in one line what you picked and what you skipped, for example: "Next in
+order: classifier#9. Skipped sanitizer#7 (in flight) and classifier#10
+(blocked by classifier#9)." Then carry on without asking for confirmation. If
+every open reference is skipped, list them with their reasons and ask what
+to start.
+
+The picked issue can be in a different repo from the directory they're in.
+Its clone is `<workspace root>/<path>` from `mani.yaml`. Run the git commands
+in steps 3 and 4 with `git -C <clone>`, and do the work in step 8 in that
+clone.
+
+### Reading the issue
+
+Read the issue:
 
 ```sh
 gh api repos/email-utils/<repo>/issues/<n> \

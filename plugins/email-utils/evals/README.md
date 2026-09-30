@@ -28,7 +28,8 @@ none. So the cases check how each skill behaves before it reaches GitHub or npm:
 - `start`, `setup`, and `release-status` trigger on natural phrasing, and
   `start` names branches the way it says to.
 - `release-status` says it couldn't reach GitHub or npm rather than inventing
-  versions.
+  versions, and `start` does the same when asked for the next issue rather
+  than picking one it couldn't check.
 - `pr`, `release`, and `sync-deps` push, merge, or publish, so they set
   `disable-model-invocation`. Their cases fail if that flag is ever dropped.
 - An unrelated coding question triggers no skill.
