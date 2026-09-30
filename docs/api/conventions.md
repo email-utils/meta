@@ -59,6 +59,11 @@ including the empty string — is data, and data problems come back as
 `{ ok: false }` results. Transport failures in validator-dns (timeouts,
 SERVFAIL) are also results, not throws. (D6)
 
+The one other rejection is an abort: when the caller's `AbortSignal` aborts
+a validator-dns check, the promise rejects with the signal's `reason`, as
+`fetch` does. The abort is the caller's own doing and says nothing about the
+domain, so it isn't a result.
+
 This changes the sanitizer, which in 0.0.1 throws on an empty string.
 
 ## Functions

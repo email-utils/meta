@@ -33,7 +33,7 @@ await detectProviderByMx('example.com'); // 'google-workspace' | 'microsoft365' 
 const validator = createDnsValidator({
   timeout: { query: 2000, overall: 5000 },
 });
-await validator.check('ada@example.com');
+await validator.check('ada@example.com', { signal: request.signal });
 ```
 
 ## Exports
@@ -54,12 +54,17 @@ export function detectProviderByMx(
   options?: DnsOptions,
 ): Promise<ProviderId | undefined>;
 
-export function createDnsValidator(options?: DnsValidatorOptions): {
-  check(emailOrDomain: string): Promise<Result<DnsSignals>>;
-  isValid(emailOrDomain: string): Promise<boolean>;
+export function createDnsValidator(options?: DnsValidatorOptions): DnsValidator;
+
+export interface DnsValidator {
+  check(
+    emailOrDomain: string,
+    options?: DnsCallOptions,
+  ): Promise<Result<DnsSignals>>;
+  isValid(emailOrDomain: string, options?: DnsCallOptions): Promise<boolean>;
   detectProviderByMx(emailOrDomain: string): Promise<ProviderId | undefined>;
   score(emailOrDomain: string): Promise<DnsScore>;
-};
+}
 
 export interface DnsSignals {
   /** MX records other than a Null MX. */
@@ -85,14 +90,25 @@ export interface DnsOptions {
    */
   syntax?: SyntaxOptions;
   /** Per-query and overall budgets in milliseconds. @default { query: 2000, overall: 5000 } */
-  timeout?: { query?: number; overall?: number };
+  timeout?: DnsTimeout;
+  /** Rejects the check with the signal's `reason` when it aborts. */
+  signal?: AbortSignal;
+}
+
+export interface DnsTimeout {
+  query?: number;
+  overall?: number;
+}
+
+/** Per call to a validator's methods, alongside the validator's own signal. */
+export interface DnsCallOptions {
   signal?: AbortSignal;
 }
 
 export interface DnsValidatorOptions extends DnsOptions {
   /** Minimal injectable resolver; defaults to node:dns/promises. */
   resolver?: DnsResolver;
-  /** TTL for the shared cache. @default 30_000 */
+  /** How long an answer stays cached, in ms; 0 caches nothing. @default 30_000 */
   cacheTtl?: number;
   /** Override the fitted scoring model. Doing so voids calibration — see Scoring. */
   scoreModel?: DnsScoreModel;
@@ -140,13 +156,32 @@ has no records. The result is `dns.lookup.timeout` for `ETIMEOUT` and
 that receives mail, and a score over the signals can tell "no SPF" from "not
 known".
 
-The factory holds the resolver and a TTL cache with in-flight dedupe, so a
-thousand concurrent checks of one domain make one lookup per record type.
-The factory, `timeout`, and `signal` come with
-[validator-dns#8](https://github.com/email-utils/validator-dns/issues/8);
-until then lookups use `node:dns/promises` with Node's own timeouts.
-Resolver errors map to `dns.*` reason codes, never throws
-([conventions D6](./conventions.md#errors)).
+**Timeouts.** Each lookup has `timeout.query` (2 s) and the check as a whole
+`timeout.overall` (5 s). A lookup that runs over counts as `ETIMEOUT`, so
+the rules above apply to it: a silent MX server fails the check with
+`dns.lookup.timeout`, and a silent TXT server leaves `hasSpf` `undefined`.
+A check settles within its budget whatever the resolver does. Budgets are
+milliseconds above 0 and at most 2³¹ − 1, the longest `setTimeout` takes.
+
+**Cache.** A validator holds its resolver and a cache. Answers, including
+"no records", stay for `cacheTtl` (30 s); failed and timed-out lookups are
+never kept. A lookup already in flight is joined rather than made again, so
+a thousand concurrent checks of one domain make one lookup per record type;
+`cacheTtl: 0` keeps the joining and caches nothing else. A check that joins
+a lookup is still held to its own budget and signals. Each record type keeps
+at most 10,000 answers and drops the oldest to make room. A check whose
+answers are all cached takes under 2 µs. `checkDns` and `isValidDns` share
+one module-wide cache over `node:dns/promises`, the same code with default
+options ([conventions D9](./conventions.md#functions)); each
+`createDnsValidator` has its own.
+
+**Abort.** When `signal`, or a call's `signal` on a validator, aborts, the
+check rejects with the signal's `reason`, an `AbortError` unless the caller
+gave one, and an already-aborted signal rejects before any lookup. It's the
+one rejection besides a `TypeError`
+([conventions D6](./conventions.md#errors)). A lookup other checks share
+keeps going for them, and its answer is cached as usual. Resolver errors
+map to `dns.*` reason codes, never throws.
 
 ## Scoring
 
@@ -260,7 +295,12 @@ looked up, and port probes are awaited. `isGSuiteMX` and
   with no label source.
 - **N4 — Cache and resolver surface.** **(a) factory-internal cache with an
   injectable minimal resolver — recommended**, per [validator-dns#8](https://github.com/email-utils/validator-dns/issues/8); (b) expose the cache
-  as its own primitive.
+  as its own primitive. Amended for validator-dns#8: `checkDns` shares one
+  module-wide cache, since D9 makes the top-level functions the factory's
+  code with default options; a validator's methods take a per-call
+  `signal`, so a server can abort each request on one shared validator; and
+  an abort rejects with the signal's `reason` rather than returning a
+  result (see Abort).
 - **N5 — Provider detection.** **(a) `detectProviderByMx` lives here and
   matches against the classifier's registry patterns, returning the same
   `ProviderId` — recommended**: this is what
