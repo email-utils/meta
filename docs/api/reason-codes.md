@@ -23,7 +23,7 @@ position exists, the result's `index` points at the offending character.
 | `syntax.local.too_long`         | The local part exceeds 64 characters.                                                  |
 | `syntax.local.invalid_char`     | A character the active preset does not allow in the local part.                        |
 | `syntax.local.consecutive_dots` | `..` outside a quoted string.                                                          |
-| `syntax.local.unquoted_space`   | A space outside a quoted string, where the preset doesn't allow one.                   |
+| `syntax.local.unquoted_space`   | A space, tab, or folded line outside a quoted string, where the preset allows none.    |
 | `syntax.domain.empty`           | Nothing after the `@`.                                                                 |
 | `syntax.domain.no_dot`          | No dot in the domain and the preset does not allow dotless domains.                    |
 | `syntax.domain.label_invalid`   | A domain label is empty or breaks the length or hyphen-placement rules.                |
