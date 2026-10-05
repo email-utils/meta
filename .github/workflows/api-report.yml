@@ -1,0 +1,74 @@
+name: API report
+
+# Checks a package PR's title against what it changes in the package's API
+# report, api/<entry>.api.md, reported as `api-report / title`. Adding public
+# API needs `feat`, and removing or changing it needs `!`. The `api: reviewed`
+# label passes it for a false positive. Called from each package's
+# pr-title.yml, which also runs on `edited` and label changes, so retitling or
+# labelling a PR rechecks it.
+#
+# The package's `check:package`, in checks.yml's package leg, keeps api/ in
+# step with the build, so this only reads the committed reports and needs no
+# install or build. The check is .github/api-report/check.mjs in meta, at
+# this workflow's own commit, and runs locally too. `$/` resolves to the same
+# commit.
+on:
+  workflow_call:
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  title:
+    name: title
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read # check out the package and meta's check
+    steps:
+      # The PR's merge commit, whose first parent is the base branch.
+      - name: Check out the package
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      # This workflow's own commit, so the check and the conventions match
+      # the pinned workflow rather than whatever meta's main holds now.
+      - name: Check out meta's check
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .meta
+          sparse-checkout: |
+            .github/api-report/check.mjs
+            plugins/email-utils/commit-conventions.json
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Check the title
+        id: run
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          node .meta/.github/api-report/check.mjs \
+            .meta/plugins/email-utils/commit-conventions.json HEAD^1 HEAD \
+            2>&1 | tee "$RUNNER_TEMP/output.log"
+
+      - name: Write job summary
+        if: always()
+        uses: $/.github/actions/job-summary
+        with:
+          check-name: API report
+          outcome: ${{ steps.run.outcome }}
+          log-file: ${{ runner.temp }}/output.log
