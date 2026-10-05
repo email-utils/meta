@@ -1,0 +1,135 @@
+name: Bench
+
+# Benchmarks a package PR's base and head one after the other on the same
+# runner, reported as `bench / compare`, with a job summary and a PR comment
+# holding the table. Called from each package's pr-gate.yml.
+#
+# It fails when an op is slower than base by more than the larger of 10% and
+# 3× its noise in the package's bench/noise.json, which bench-calibrate.yml
+# measures, or when head misses a ratio or legacy target in its bench test's
+# meta. A failing bench test fails it too. The `bench: reviewed` label passes
+# a slowdown worth having; the job reads the labels when it runs, so re-run
+# it after adding one. .github/bench/check.mjs in meta does the comparing,
+# and runs locally too.
+#
+# Its scripts come from meta at this workflow's own commit, and `$/`
+# resolves to the same commit.
+on:
+  workflow_call:
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  compare:
+    name: compare
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      contents: read # check out the package and meta's scripts
+      pull-requests: write # read the PR's labels, and pr-comment posts to it
+    env:
+      # lefthook's install script would set up git hooks that never run here.
+      LEFTHOOK: 0
+    steps:
+      # The merge commit, and its first parent: the base it merges into.
+      - name: Check out the package
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      # This workflow's own commit, so the scripts match the pinned workflow
+      # rather than whatever meta's main holds now.
+      - name: Check out meta's scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .meta
+          sparse-checkout: |
+            .github/bench
+            .github/actions/summarize/lib
+          persist-credentials: false
+
+      # Head's Node for both sides, so only the package differs.
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The base's own benchmarks, from its own install and build. A failure
+      # there isn't this PR's to fix: the ops it has no results for count as
+      # new.
+      - name: Bench the base
+        continue-on-error: true
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/base" HEAD^1
+          cd "$RUNNER_TEMP/base"
+          if [ -z "$(find bench -name '*.bench.ts' -print -quit 2>/dev/null)" ]; then
+            echo "The base has no bench/**/*.bench.ts files, so there's nothing to compare."
+            exit 0
+          fi
+          npm ci
+          npm run bench -- --reporter=default --reporter=json --outputFile.json=.reports/bench/results.json 2>&1 | tee -a "$RUNNER_TEMP/output.log"
+
+      # Vitest writes its JSON when a bench test fails too, so the comparison
+      # runs either way, and the step fails for either.
+      - name: Bench the head and compare
+        id: run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -z "$(find bench -name '*.bench.ts' -print -quit 2>/dev/null)" ]; then
+            echo "No bench/**/*.bench.ts files, so there's nothing to bench." | tee -a "$RUNNER_TEMP/output.log"
+            exit 0
+          fi
+          status=0
+          npm run bench -- --reporter=default --reporter=json --outputFile.json=.reports/bench/results.json 2>&1 | tee -a "$RUNNER_TEMP/output.log" || status=$?
+          LABELS=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '[.labels[].name]') \
+            node .meta/.github/bench/check.mjs compare \
+            "$RUNNER_TEMP/base/.reports/bench/results.json" .reports/bench/results.json bench/noise.json \
+            2>&1 | tee -a "$RUNNER_TEMP/output.log"
+          exit "$status"
+
+      - name: Summarize output
+        id: summarize
+        if: always()
+        uses: $/.github/actions/summarize
+        with:
+          check: bench
+          results-file: .reports/bench/results.json
+          base-file: ${{ runner.temp }}/base/.reports/bench/results.json
+
+      - name: Write job summary
+        if: always()
+        uses: $/.github/actions/job-summary
+        with:
+          check-name: Benchmarks
+          outcome: ${{ steps.run.outcome }}
+          log-file: ${{ runner.temp }}/output.log
+          summary: ${{ steps.summarize.outputs.summary }}
+          details: ${{ steps.summarize.outputs.details }}
+
+      # !cancelled(), not always(): pr-comment reads a cancelled run as a
+      # failure, and a newer push cancels this one.
+      - name: Comment on PR
+        if: ${{ !cancelled() }}
+        uses: $/.github/actions/pr-comment
+        with:
+          check-name: Benchmarks
+          marker-slug: bench
+          pr-number: ${{ github.event.pull_request.number }}
+          outcome: ${{ steps.run.outcome }}
+          log-file: ${{ runner.temp }}/output.log
+          success-mode: comment
+          summary: ${{ steps.summarize.outputs.summary }}
+          details: ${{ steps.summarize.outputs.details }}

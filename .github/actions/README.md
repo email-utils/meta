@@ -6,7 +6,7 @@ when called from another repo.
 
 | Action           | What it does                                                                                                                 |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `summarize`      | Turns lint, format, typecheck, or vitest output into a one-line `summary` and a `details` block                              |
+| `summarize`      | Turns lint, format, typecheck, vitest, or bench output into a one-line `summary` and a `details` block                       |
 | `job-summary`    | Writes a pass/fail section to the job summary, with the log's last 100 lines on failure                                      |
 | `pr-comment`     | Keeps one PR comment per check, updated in place. On success, `minimize` resolves an earlier failure; `comment` always posts |
 | `audit-comment`  | Reports `npm audit --json` output as a non-blocking warning, to the job summary and a PR comment                             |
@@ -65,6 +65,12 @@ For vitest, run `npm run test:coverage -- --reporter=default --reporter=json`.
 The package's vitest config writes the JSON to `.reports/vitest/results.json`
 and the coverage summary to `.reports/coverage/`, which are `summarize`'s
 defaults.
+
+For bench, pass `vitest bench`'s JSON reporter output for head as
+`results-file` and for base as `base-file`; `noise-file` defaults to the
+package's `bench/noise.json`. `summarize` only reports: meta's
+`.github/bench/check.mjs` decides whether the comparison passes, and
+`bench.yml` runs both.
 
 ## Behavior worth knowing
 

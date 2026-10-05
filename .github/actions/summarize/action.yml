@@ -5,16 +5,24 @@ description: >-
 
 inputs:
   check:
-    description: Whose output to read, one of lint, format, typecheck, or vitest
+    description: Whose output to read, one of lint, format, typecheck, vitest, or bench
     required: true
   log-file:
     description: The check's captured output, for lint, format, and typecheck
     required: false
     default: ''
   results-file:
-    description: Vitest's JSON reporter output, for vitest
+    description: Vitest's JSON reporter output, for vitest. For bench, head's `vitest bench` output
     required: false
     default: .reports/vitest/results.json
+  base-file:
+    description: For bench, base's `vitest bench` output. Missing means nothing to compare
+    required: false
+    default: ''
+  noise-file:
+    description: For bench, the calibrated A/A noise. Missing means every threshold is the 10% floor
+    required: false
+    default: bench/noise.json
   coverage-file:
     description: coverage-v8's json-summary output, for vitest. Missing means no coverage table
     required: false
@@ -40,6 +48,8 @@ runs:
         LOG_FILE: ${{ inputs.log-file }}
         RESULTS_FILE: ${{ inputs.results-file }}
         COVERAGE_FILE: ${{ inputs.coverage-file }}
+        BASE_FILE: ${{ inputs.base-file }}
+        NOISE_FILE: ${{ inputs.noise-file }}
       run: |
         case "$CHECK" in
           lint | format | typecheck)
@@ -56,8 +66,11 @@ runs:
           vitest)
             node "$ACTION_PATH/vitest.mjs"
             ;;
+          bench)
+            node "$ACTION_PATH/bench.mjs"
+            ;;
           *)
-            echo "::error::Unknown check '$CHECK'. Use lint, format, typecheck, or vitest."
+            echo "::error::Unknown check '$CHECK'. Use lint, format, typecheck, vitest, or bench."
             exit 1
             ;;
         esac
