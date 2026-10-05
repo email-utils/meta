@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "description": "The tools for meta's consumer fixtures; check.mjs installs the package under test beside them.",
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "7.0.2",
+    "typescript5": "npm:typescript@5.9.3",
+    "typescript6": "npm:typescript@6.0.3",
+    "vite": "8.3.2"
+  }
+}
