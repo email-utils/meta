@@ -88,14 +88,6 @@ way and the `main` ruleset would block the merge.
 For coverage, report the totals and name any changed source file whose
 coverage dropped below the thresholds in `vitest.config.ts`.
 
-A package's PR gate also runs `bench / compare` (meta#20), which benches
-base and head on one runner. Don't run the benchmarks here: a laptop's
-numbers aren't the runner's, and the check reports its own table on the PR.
-When it fails, its comment names each op that's slower than its threshold or
-misses a ratio or legacy target. A slowdown that's noise passes on a re-run.
-One that's worth having takes the `bench: reviewed` label and a re-run;
-that call is the person's, and so is adding the label.
-
 ## 3. Draft the title
 
 The title is `<type>(<scope>): <subject>`, checked by meta's `pr-title`
