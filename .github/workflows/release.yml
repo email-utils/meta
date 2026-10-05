@@ -9,7 +9,6 @@ name: Release
 #   - publish stages that tarball on npm through OIDC trusted publishing, with
 #     provenance. Nothing goes live until a maintainer approves the stage
 #     with 2FA; the job summary has the stage ID and the commands.
-#   - bench attaches the benchmark results to the GitHub release
 #
 # npm checks the caller's filename, so each package's trusted publisher names
 # release.yml in the package repo, not this file. Both need `id-token: write`.
@@ -195,63 +194,3 @@ jobs:
 
           Or approve it from the package's **Staged Packages** tab on npmjs.com, once npm's malware scan finishes.
           EOF
-
-  bench:
-    name: bench
-    needs: release-please
-    if: needs.release-please.outputs.created == 'true'
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    permissions:
-      contents: write # upload the results to the GitHub release
-    env:
-      LEFTHOOK: 0
-    steps:
-      - name: Check out the release
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.release-please.outputs.tag }}
-          persist-credentials: false
-
-      - name: Find the benchmarks
-        id: find
-        run: |
-          if [ -n "$(find bench -name '*.bench.ts' -print -quit 2>/dev/null)" ]; then
-            echo "found=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::No bench/**/*.bench.ts files, so this release has no benchmark results."
-          fi
-
-      - name: Set up Node
-        if: steps.find.outputs.found == 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .nvmrc
-          package-manager-cache: false
-
-      - name: Install dependencies
-        if: steps.find.outputs.found == 'true'
-        run: npm ci
-
-      # The runner's hardware goes alongside Vitest's results, so the
-      # Performance page can say what the numbers were measured on. Vitest 5
-      # has no `--outputJson`; its JSON reporter puts each benchmark's stats
-      # under `testResults[].assertionResults[].benchmarks`.
-      - name: Run the benchmarks
-        if: steps.find.outputs.found == 'true'
-        run: |
-          npm run bench -- --reporter=json --outputFile "$RUNNER_TEMP/vitest-bench.json"
-          jq \
-            --arg cpu "$(lscpu | sed -n 's/^Model name: *//p')" \
-            --argjson cores "$(nproc)" \
-            --arg node "$(node --version)" \
-            --arg os "$ImageOS $ImageVersion" \
-            '{runner: {cpu: $cpu, cores: $cores, node: $node, os: $os}, results: .}' \
-            "$RUNNER_TEMP/vitest-bench.json" > "$RUNNER_TEMP/bench.json"
-
-      - name: Attach the results to the release
-        if: steps.find.outputs.found == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.release-please.outputs.tag }}
-        run: gh release upload "$TAG" "$RUNNER_TEMP/bench.json" --clobber --repo "$GITHUB_REPOSITORY"
