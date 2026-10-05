@@ -127,22 +127,26 @@ shapes history.
 
 ## 4. Check the API report
 
-Skip this when the repo has no `api/` directory. Otherwise `api/` holds a
-snapshot of each entry point's bundled `.d.ts`, and CI fails when it changes
-and the title doesn't match (meta#16). Look at what changed:
+Skip this when the repo has no `api/` directory. Otherwise `api/` holds API
+Extractor's report of each entry point's public API, `<entry>.api.md`, and
+the `api-report / title` check fails when the PR changes it and the title
+doesn't release that (meta#16). `check:package` in section 2 fails when
+`api/` doesn't match the build; `npm run api` rewrites it, and the new
+reports belong in the PR. Look at what changed:
 
 ```sh
 git diff origin/main -- api/
 ```
 
-- Removed or changed exports need `!`.
-- Only added exports need `feat` (or `!`).
-- No change to `api/` with a `feat` or `!` title is fine, but ask whether the
-  snapshot needs regenerating if the diff touches `src/` exports.
+- Removed or changed lines need `!`. A changed line counts as a removal.
+- Only added lines, or a new entry point, need `feat` (or `!`).
+- Comment lines (`// (undocumented)`, `// @public`) don't count.
+- No change to `api/` with a `feat` or `!` title is fine.
 
 When the title and the report disagree, warn and say which should change. If
-the report is a false positive, the check's reviewed label overrides it; that
-call is the person's.
+the report is a false positive, such as a widened parameter type, the
+`api: reviewed` label passes the check; that call is the person's, and so is
+adding the label.
 
 ## 5. Write the body
 

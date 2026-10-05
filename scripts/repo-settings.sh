@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Applies the organization's repository settings to every email-utils repo:
 # squash-only merges that use the PR title and body, auto-merge, branch
-# deletion on merge, the security features, and a `main` ruleset that
-# requires a PR, linear history, and each repo's PR gate checks. Rerunning it
-# is safe: the ruleset is updated in place by name.
+# deletion on merge, the security features, a `main` ruleset that requires a
+# PR, linear history, and each repo's PR gate checks, and the packages'
+# `api: reviewed` label. Rerunning it is safe: the ruleset and the label are
+# updated in place by name.
 #
 #   scripts/repo-settings.sh [--dry-run] [repo...]    # default: every repo
 #
@@ -35,10 +36,13 @@ package_checks=(
   'consumers / typescript5'
   'consumers / typescript6'
   'consumers / typescript7'
+  'api-report / title'
 )
 # Every package but the ones that need Node by design, which get no browser
 # job. Meta's .github/consumers/check.mjs lists them as `nodeOnly`.
 browser_check='consumers / browser'
+# Passes `api-report / title` when a PR's API change is a false positive.
+api_label='api: reviewed'
 meta_checks=(
   'pr-title / pr-title'
   actionlint
@@ -120,9 +124,10 @@ ruleset() {
 
 for repo in "${repos[@]}"; do
   echo "$org/$repo"
+  package=true
   case "$repo" in
-    meta) checks=("${meta_checks[@]}") ;;
-    .github) checks=() ;;
+    meta) checks=("${meta_checks[@]}") package=false ;;
+    .github) checks=() package=false ;;
     validator-dns) checks=("${package_checks[@]}") ;;
     *) checks=("${package_checks[@]}" "$browser_check") ;;
   esac
@@ -149,6 +154,20 @@ for repo in "${repos[@]}"; do
   api -X PUT "repos/$org/$repo/private-vulnerability-reporting"
   api -X PUT "repos/$org/$repo/vulnerability-alerts"
   api -X PUT "repos/$org/$repo/automated-security-fixes"
+
+  if "$package"; then
+    body=$(jq -n --arg name "$api_label" '{
+      name: $name,
+      color: "1d76db",
+      description: "Passes api-report / title: the API change was reviewed"
+    }')
+    label_path="repos/$org/$repo/labels/${api_label// /%20}"
+    if gh api "$label_path" --silent 2>/dev/null; then
+      api -X PATCH "$label_path"
+    else
+      api -X POST "repos/$org/$repo/labels"
+    fi
+  fi
 
   body=$(ruleset ${checks[@]+"${checks[@]}"})
   id=$(gh api "repos/$org/$repo/rulesets" \

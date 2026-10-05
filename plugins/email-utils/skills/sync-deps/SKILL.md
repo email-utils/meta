@@ -184,10 +184,12 @@ and stop for this dependent: fixing it is real work on its own issue, and
 the PR then isn't a plain `fix(deps)` bump. Leave the branch as it is and
 say so.
 
-When the dependent has an `api/` directory, check `git diff -- api/`. The
-dependency's types can reach the dependent's public API through re-exports.
-A change there needs `!` in the title, as the `pr` skill's section 4
-explains. Ask rather than decide.
+When the dependent has an `api/` directory, the dependency's types can reach
+its public API through re-exports, and `check:package` then fails because
+`api/` no longer matches the build. That isn't a break on its own: run
+`npm run api` and check `git diff -- api/`. A change there needs `!` or
+`feat` in the title, as the `pr` skill's section 4 explains. Ask rather than
+decide.
 
 ## 7. Get the go-ahead
 
