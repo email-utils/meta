@@ -40,12 +40,14 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "bench": "vitest bench --run",
-    "check:package": "publint && attw --pack .",
+    "api": "npm run build && node scripts/api-report.ts",
+    "check:package": "publint && attw --pack . && node scripts/api-report.ts --check",
     "pre-commit": "npm run lint && npm run format:check && npm run typecheck",
     "prepack": "npm run build"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
+    "@microsoft/api-extractor": "^7.59.3",
     "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "^5.0.2",
     "lefthook": "^2.1.14",
