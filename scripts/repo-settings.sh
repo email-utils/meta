@@ -3,8 +3,8 @@
 # squash-only merges that use the PR title and body, auto-merge, branch
 # deletion on merge, the security features, a `main` ruleset that requires a
 # PR, linear history, and each repo's PR gate checks, and the packages'
-# `api: reviewed` label. Rerunning it is safe: the ruleset and the label are
-# updated in place by name.
+# `api: reviewed` and `bench: reviewed` labels. Rerunning it is safe: the
+# ruleset and the labels are updated in place by name.
 #
 #   scripts/repo-settings.sh [--dry-run] [repo...]    # default: every repo
 #
@@ -37,12 +37,18 @@ package_checks=(
   'consumers / typescript6'
   'consumers / typescript7'
   'api-report / title'
+  'bench / compare'
 )
 # Every package but the ones that need Node by design, which get no browser
 # job. Meta's .github/consumers/check.mjs lists them as `nodeOnly`.
 browser_check='consumers / browser'
-# Passes `api-report / title` when a PR's API change is a false positive.
-api_label='api: reviewed'
+# The packages' labels that pass a check, as name, then description: a false
+# positive from `api-report / title`, and a slowdown from `bench / compare`
+# that's noise or worth having.
+package_labels=(
+  'api: reviewed' 'Passes api-report / title: the API change was reviewed'
+  'bench: reviewed' 'Passes bench / compare: the slowdown was reviewed'
+)
 meta_checks=(
   'pr-title / pr-title'
   actionlint
@@ -156,17 +162,20 @@ for repo in "${repos[@]}"; do
   api -X PUT "repos/$org/$repo/automated-security-fixes"
 
   if "$package"; then
-    body=$(jq -n --arg name "$api_label" '{
-      name: $name,
-      color: "1d76db",
-      description: "Passes api-report / title: the API change was reviewed"
-    }')
-    label_path="repos/$org/$repo/labels/${api_label// /%20}"
-    if gh api "$label_path" --silent 2>/dev/null; then
-      api -X PATCH "$label_path"
-    else
-      api -X POST "repos/$org/$repo/labels"
-    fi
+    for ((i = 0; i < ${#package_labels[@]}; i += 2)); do
+      label=${package_labels[i]}
+      body=$(jq -n --arg name "$label" --arg description "${package_labels[i + 1]}" '{
+        name: $name,
+        color: "1d76db",
+        description: $description
+      }')
+      label_path="repos/$org/$repo/labels/${label// /%20}"
+      if gh api "$label_path" --silent 2>/dev/null; then
+        api -X PATCH "$label_path"
+      else
+        api -X POST "repos/$org/$repo/labels"
+      fi
+    done
   fi
 
   body=$(ruleset ${checks[@]+"${checks[@]}"})
