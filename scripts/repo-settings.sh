@@ -28,7 +28,17 @@ package_checks=(
   'checks / build'
   'checks / package'
   'test / vitest'
+  'consumers / pack'
+  'consumers / node22'
+  'consumers / node24'
+  'consumers / node26'
+  'consumers / typescript5'
+  'consumers / typescript6'
+  'consumers / typescript7'
 )
+# Every package but the ones that need Node by design, which get no browser
+# job. Meta's .github/consumers/check.mjs lists them as `nodeOnly`.
+browser_check='consumers / browser'
 meta_checks=(
   'pr-title / pr-title'
   actionlint
@@ -113,7 +123,8 @@ for repo in "${repos[@]}"; do
   case "$repo" in
     meta) checks=("${meta_checks[@]}") ;;
     .github) checks=() ;;
-    *) checks=("${package_checks[@]}") ;;
+    validator-dns) checks=("${package_checks[@]}") ;;
+    *) checks=("${package_checks[@]}" "$browser_check") ;;
   esac
 
   # Squash only, with the PR title as the subject. The body carries the
