@@ -211,10 +211,9 @@ Then watch it until it finishes:
 gh run watch <id> --repo email-utils/<repo> --exit-status
 ```
 
-The jobs are `release-please`, `build`, `publish`, and `bench`. On a
-failure, list the jobs with their conclusions, show the failing step's log
-(`gh run view <id> --repo email-utils/<repo> --log-failed`), and stop for
-this package:
+The jobs are `release-please`, `build`, and `publish`. On a failure, list
+the jobs with their conclusions, show the failing step's log (`gh run view
+<id> --repo email-utils/<repo> --log-failed`), and stop for this package:
 
 - `release-please` or `build` failed: nothing was staged. A `build` failure
   after the tag means the GitHub release exists without an npm version.
@@ -222,8 +221,6 @@ this package:
 - `publish` failed: the tag and GitHub release exist, but nothing was
   staged. Show the error, since it's usually trusted-publisher setup (see
   `templates/README.md`).
-- `bench` failed: the release is fine without the results. Say so and carry
-  on.
 
 ## 8. Hand over the approval
 
@@ -268,8 +265,7 @@ gh api repos/email-utils/<repo>/releases/tags/v<version> \
 - The dist-tag the plan named points at it: `next` for a prerelease,
   `latest` otherwise. `latest` still holds the last final version while
   `next` moves.
-- The GitHub release exists, its `prerelease` matches the version, and it
-  has `bench.json` when the package has benchmarks.
+- The GitHub release exists, and its `prerelease` matches the version.
 
 npm can take a minute to show a new version. If it's missing, check once
 more after about 30 seconds, then report what's missing rather than

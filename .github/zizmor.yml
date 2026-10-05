@@ -5,7 +5,6 @@ rules:
   # whose other pins are all release tags.
   stale-action-refs:
     ignore:
-      - bench-calibrate.yml
       - nightly.yml
       - pr-gate.yml
       - pr-title.yml

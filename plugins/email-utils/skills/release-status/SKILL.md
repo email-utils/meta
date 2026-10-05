@@ -111,8 +111,7 @@ gh api repos/email-utils/<repo>/actions/runs/<id>/jobs \
   --jq '.jobs[] | {name, status, conclusion}'
 ```
 
-Skipped `build`, `publish`, and `bench` jobs are normal when no release was
-cut. A failed or cancelled `publish` after a tag means the release exists on
+Skipped `build` and `publish` jobs are normal when no release was cut. A failed or cancelled `publish` after a tag means the release exists on
 GitHub but never reached npm.
 
 **npm.** The dist-tags and every published version, then provenance for
