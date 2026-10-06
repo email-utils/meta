@@ -15,10 +15,10 @@
     "types:check": "next typegen && tsc --noEmit"
   },
   "dependencies": {
-    "@email-utils/classifier": "1.0.0-rc.4",
-    "@email-utils/sanitizer": "1.0.0-rc.2",
-    "@email-utils/validator-dns": "1.0.0-rc.1",
-    "@email-utils/validator-syntax": "1.0.0-rc.3",
+    "@email-utils/classifier": "1.0.0-rc.5",
+    "@email-utils/sanitizer": "1.0.0-rc.3",
+    "@email-utils/validator-dns": "1.0.0-rc.2",
+    "@email-utils/validator-syntax": "1.0.0-rc.4",
     "cn": "^0.4.0",
     "fumadocs-core": "16.15.17",
     "fumadocs-docgen": "3.1.1",

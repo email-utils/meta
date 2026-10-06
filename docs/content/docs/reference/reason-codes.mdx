@@ -1,0 +1,104 @@
+---
+title: Reason codes
+description: Every code a package can return in a failed result, and what it means.
+---
+
+A failed result carries one `reason`, from the first check that failed. Codes
+are dotted lowercase, `<package>.<subject>.<problem>`, and share one namespace
+across the packages. See [Conventions](/docs/reference/conventions#reason-codes)
+for the result shape.
+
+A released code never changes meaning or disappears within a major version.
+New codes can arrive in a minor version, so give an exhaustive `switch` a
+default branch. `message` isn't covered by semver: branch on `reason`.
+
+## validator-syntax
+
+Returned by `parseAddress` and a syntax validator's `parse`. Where there's a
+position to point at, the result's `index` holds it. See the [validator-syntax
+reference](/docs/reference/validator-syntax) for the presets and options these
+depend on.
+
+| Code                            | Meaning                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `syntax.address.empty`          | The input is the empty string.                                                                                                                                                                                                                                                                                                |
+| `syntax.address.no_at`          | No `@` outside a quoted string, comment, or domain literal. A quoted string or literal left open runs to the end and takes any `@` with it. (A comment left open that takes the `@` gives `syntax.comment.unterminated` instead.)                                                                                             |
+| `syntax.address.too_long`       | The input is longer than `maxLength` (512 UTF-16 code units by default), checked before anything is scanned; or the address, without comments or folding whitespace, is over 254 characters, counting the local part in UTF-8 octets with `allowUnicode` and U-labels as A-labels with `allowIdn`. Every preset.              |
+| `syntax.local.empty`            | Nothing before the `@`, or only comments and folding whitespace, where those are allowed.                                                                                                                                                                                                                                     |
+| `syntax.local.too_long`         | The local part is over 64 characters, or 64 UTF-8 octets with `allowUnicode`. Only `practical` and `rfc5321` have this cap.                                                                                                                                                                                                   |
+| `syntax.local.invalid_char`     | A character the preset doesn't allow where it sits in the local part: outside the preset's atom characters, a leading or trailing dot, a `"` that doesn't open a word (in `rfc5321`, anywhere but the start), a bad character or escape inside a quoted string or comment, a lone CR or LF, or a lone surrogate. Has `index`. |
+| `syntax.local.consecutive_dots` | Two dots in a row outside a quoted string, with nothing but comments or folding whitespace between them. Never in `html5`. `index` is the second dot.                                                                                                                                                                         |
+| `syntax.local.unquoted_space`   | A space, tab, or folded line (CRLF and a space or tab) in the local part outside a quoted string, in every preset. In `rfc5322`, which allows folding whitespace between tokens, only between two words with no dot between them. `index` is the first whitespace character.                                                  |
+| `syntax.domain.empty`           | Nothing after the `@`, or only comments and folding whitespace, where those are allowed.                                                                                                                                                                                                                                      |
+| `syntax.domain.no_dot`          | The domain is a single label and dotless domains aren't allowed (`allowNoTld`, on only in `html5` by default). Never for a domain literal.                                                                                                                                                                                    |
+| `syntax.domain.label_invalid`   | A domain label is empty (a leading, trailing, or doubled dot), starts or ends with a hyphen, is over 63 characters (as an A-label with `allowIdn`), or, with `allowIdn`, is a U-label that doesn't convert to an A-label under UTS #46. `index` is the dot, the hyphen, or the label's first character.                       |
+| `syntax.domain.literal_invalid` | With domain literals on, a literal that's malformed or never closes: in `practical` and `rfc5321`, anything but an IPv4 or `IPv6:` address literal. `index` is the `[`.                                                                                                                                                       |
+| `syntax.domain.too_long`        | The domain is over 253 characters, counting U-labels as A-labels. Not in `html5`, which has only the 254 address cap.                                                                                                                                                                                                         |
+| `syntax.domain.invalid_char`    | A character the preset doesn't allow where it sits in the domain: outside the preset's label characters, non-ASCII without `allowIdn`, a `[` when literals are off or not at the start, anything after a literal, whitespace (outside `rfc5322`'s folding whitespace), or a bad character in a domain comment. Has `index`.   |
+| `syntax.comment.not_allowed`    | A comment where the options don't allow one: comments are off, or, in `practical` with `allowComments`, a comment between words or labels instead of at an end of the local part or domain. `index` is the `(`.                                                                                                               |
+| `syntax.comment.unterminated`   | A `(` with no matching `)`, with comments on: in the domain, or in the local part when the comment took the `@` with it. `index` is the `(`.                                                                                                                                                                                  |
+| `syntax.tld.unknown`            | The TLD isn't in the bundled IANA set (case ignored; IDN TLDs known as U-labels and A-labels). Only when `checkTld` is on, which is the default only in `practical`. A dotless domain or a domain literal has no TLD to check.                                                                                                |
+
+- `index`, where present, is the UTF-16 offset of the offending character in the whole input. These codes never carry it: `syntax.address.empty`, `syntax.address.no_at`, `syntax.address.too_long`, `syntax.local.empty`, `syntax.local.too_long`, `syntax.domain.empty`, `syntax.domain.no_dot`, `syntax.domain.too_long`, and `syntax.tld.unknown`. The rest always do.
+- The first failure wins: empty input, `maxLength`, the `@` split, the local part left to right then its cap, the domain left to right then its cap, the 254 address cap, the dot, the TLD.
+- An unclosed `(` in the local part that swallows the `@` gives `syntax.comment.unterminated` at that `(`; with no `@` inside the comment it's `syntax.address.no_at`. This needs comments on (`rfc5322`, or `practical` with `allowComments`); with them off, the `(` is `syntax.comment.not_allowed`.
+- Every failure also has a `message`, which isn't semver-stable. For `syntax.address.too_long`, it names the `maxLength` limit when that's what failed, and the 254-character cap otherwise.
+- `html5` emits no comment codes other than `syntax.comment.not_allowed`, no `syntax.domain.literal_invalid`, `syntax.local.too_long`, `syntax.local.consecutive_dots`, or `syntax.domain.too_long`, and no `syntax.domain.no_dot` or `syntax.tld.unknown` with its defaults.
+
+## classifier
+
+The classifier has no reason codes: its lookups answer what an address is rather than whether it passes, so they return plain data (a provider entry, booleans, a suggestion) instead of `{ ok }` results.
+
+- An address the classifier can't read (a string the `practical` preset rejects, a string over 254 characters, or a parsed address with an empty half) isn't a failure: it comes back as unknown, with no provider, `false` for disposable and role, and no suggestion (except that `suggestCorrection` still reads strings whose only problem is the TLD).
+- The only errors are `TypeError`s for programmer mistakes: input that isn't a string or a parsed address, and malformed `ClassifyOptions`.
+
+## sanitizer
+
+Returned by `normalizeEmail` and a sanitizer's `normalize`. See the [sanitizer
+reference](/docs/reference/sanitizer).
+
+| Code                           | Meaning                                                                                                                                                                                                                                                        |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sanitizer.address.unparsable` | There's no address to normalize: a string longer than the `syntax` options' `maxLength` (512 by default), checked before it's trimmed; a string the `syntax` options reject, the empty string included; or a parsed address with an empty `local` or `domain`. |
+
+- It's the sanitizer's only code. The result never carries `index`, even when
+  validator-syntax found a position; the parser's own wording comes through in
+  `message`, which isn't semver-stable.
+- Whether a string fails depends on the `syntax` options: the default
+  `practical` preset rejects comments, quotes, and TLDs outside the IANA set;
+  the `rfc5322` preset accepts all three.
+- Surrounding whitespace counts toward `maxLength`, so a short address padded
+  past the limit fails with this code.
+- A parsed address isn't parsed or checked again, so it fails only for an
+  empty half. Input that's neither a string nor a parsed address throws
+  `TypeError` instead.
+
+## validator-dns
+
+Returned by `checkDns`, `detectProviderByMx`, `probeSmtp`, and `scoreDns`, and
+by a DNS validator's methods. No result carries `index`. See the
+[validator-dns reference](/docs/reference/validator-dns).
+
+| Code                     | Meaning                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dns.address.unparsable` | The input isn't an address or domain that can be looked up, so no lookup was made: it's longer than the `syntax` options' `maxLength` (512 by default, counted before trimming), the `syntax` options reject it, its domain is a domain literal, its domain has a character no hostname can hold (`rfc5322` only), or the domain has no A-label form. |
+| `dns.domain.not_found`   | The MX, A, AAAA, and TXT lookups all succeeded and found no records. An empty answer, `ENODATA`, and `ENOTFOUND` all count as no records.                                                                                                                                                                                                             |
+| `dns.mx.none`            | The MX, A, and AAAA lookups found no records, but the TXT lookup found some, or timed out or failed. There's no MX, and no A or AAAA to serve as the implicit MX (RFC 5321 §5.1).                                                                                                                                                                     |
+| `dns.mx.null`            | The MX answer is a Null MX (RFC 7505), an MX record whose host is `.`, and nothing else: the domain says it receives no mail. It fails even when the domain has A or AAAA records. A Null MX next to other MX records doesn't fail the check.                                                                                                         |
+| `dns.lookup.timeout`     | A lookup the answer rests on timed out: it ran past the smaller of `timeout.query` and `timeout.overall`, or the resolver rejected with `ETIMEOUT`. The lookups the answer rests on are MX, and A or AAAA when there's no MX and neither has records.                                                                                                 |
+| `dns.lookup.failed`      | A lookup the answer rests on failed with any other error, such as `ESERVFAIL` or `EREFUSED`, or one without a code. `message` names the record type and, when there is one, the error code: `The MX lookup failed with ESERVFAIL`.                                                                                                                    |
+
+- Every function emits them: `checkDns`, `probeSmtp`, `scoreDns`, and the
+  validator's `check`, `probeSmtp`, and `score` methods return them, and
+  `isValidDns` and `isValid` return `false` for any of them. `probeSmtp` and
+  `scoreDns` fail only as `checkDns` does, before any probe or score.
+- `detectProviderByMx` emits only `dns.address.unparsable`,
+  `dns.lookup.timeout`, and `dns.lookup.failed` (for the MX lookup). A domain
+  with no MX, a Null MX, or no records is `{ ok: true, value: undefined }`.
+- The checks run in a fixed order, and the first that fails gives the code:
+  input, then the MX lookup's failure, then a lone Null MX, then, with no MX
+  and no A or AAAA records, the A lookup's failure, the AAAA lookup's
+  failure, and finally `dns.domain.not_found` or `dns.mx.none`.
+- A TXT lookup that fails never fails the check on its own: it leaves
+  `hasSpf` `undefined`, or turns `dns.domain.not_found` into `dns.mx.none`.
+- An abort isn't a reason code: the call rejects with the signal's `reason`.

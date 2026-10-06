@@ -1,0 +1,403 @@
+---
+title: validator-syntax
+description: The presets, options, checks, results, limits, and fixtures of @email-utils/validator-syntax.
+---
+
+`@email-utils/validator-syntax` answers "is the address well-formed?" It
+splits an address into its local part, domain, TLD, and comments under one of
+four presets, or returns the first check it fails. It's synchronous and runs
+in the browser and in Node.
+
+```sh
+npm install @email-utils/validator-syntax@next
+```
+
+Until 1.0.0, the v1 release candidates are on the `next` tag. Every export's
+signature is in the [API reference](/docs/api/validator-syntax).
+
+```ts ts2js
+import {
+  createSyntaxValidator,
+  parseAddress,
+} from '@email-utils/validator-syntax';
+
+parseAddress('ada.lovelace@example.co.uk');
+// => { ok: true, value: { local: 'ada.lovelace', domain: 'example.co.uk', tld: 'uk', comments: [] } }
+
+const rfc5321 = createSyntaxValidator({ preset: 'rfc5321' });
+rfc5321.parse('ada lovelace@example.com');
+// => { ok: false, reason: 'syntax.local.unquoted_space', index: 3 }
+rfc5321.isValid('"ada lovelace"@example.com'); // => true
+```
+
+Failed results also carry a `message`; the samples on this page leave it out.
+
+## Presets
+
+A preset is the base rule set. Pick one with the `preset` option and adjust
+it with the other [options](#options).
+
+- **`practical`** (the default): what real mailboxes look like. It rejects
+  forms that are legal but never seen on real mailboxes: quoted local parts,
+  the `%` and `!` route characters, comments, and domain literals. The TLD
+  must be in the IANA set.
+- **`rfc5321`**: what SMTP accepts on the wire, quoted local parts and IP
+  address literals included.
+- **`rfc5322`**: RFC 5322's full addr-spec, with comments, folding
+  whitespace, and the obsolete syntax RFC 5322 requires parsers to accept.
+- **`html5`**: the WHATWG `input[type=email]` regex, for parity with browser
+  forms, plus the 254-character address cap and `maxLength`.
+
+What each preset accepts with its default options:
+
+| Rule                   | `practical`                | `rfc5321`                         | `rfc5322`                            | `html5`              |
+| ---------------------- | -------------------------- | --------------------------------- | ------------------------------------ | -------------------- |
+| Local-part characters  | atext without `%` and `!`  | atext                             | atext                                | atext                |
+| Dots in the local part | Single, between characters | Single, between characters        | Single, between words                | Anywhere, any number |
+| Quoted strings         | No                         | The whole local part only         | Any word, mixed with atoms           | No                   |
+| Domain characters      | Letters, digits, `-`       | Letters, digits, `-`              | atext                                | Letters, digits, `-` |
+| Domain literals        | No                         | IPv4 and `IPv6:` address literals | Any text RFC 5322 allows in brackets | No                   |
+| Comments               | No                         | No                                | Around every word and label          | No                   |
+| Obsolete syntax        | No                         | No                                | Yes                                  | No                   |
+| Local-part cap         | 64                         | 64                                | None                                 | None                 |
+| Domain cap             | 253                        | 253                               | 253                                  | None                 |
+| Label cap              | 63                         | 63                                | 63                                   | 63                   |
+| Address cap            | 254                        | 254                               | 254                                  | 254                  |
+| TLD in the IANA set    | Required                   | Not checked                       | Not checked                          | Not checked          |
+| Dotless domains        | No                         | No                                | No                                   | Yes                  |
+| `maxLength`            | 512                        | 512                               | 512                                  | 512                  |
+
+atext is RFC 5322's set: letters, digits, and ``!#$%&'*+-/=?^_`{|}~``. In
+every preset, a domain label can't start or end with a hyphen, and
+`xn--` A-labels are ordinary labels.
+
+### practical
+
+A dot-atom local part: letters, digits, and ``#$&'*+-/=?^_`{|}~``, with single
+dots between them. No quoted strings, no `%` or `!`, no comments or
+whitespace. Hostname labels with at least one dot, no domain literals, and
+a TLD from the IANA set. `allowComments`, `allowIpLiteral`, `allowUnicode`,
+and `allowIdn` can each turn on what their names say.
+
+### rfc5321
+
+An RFC 5321 Dot-string or Quoted-string local part, never both mixed, capped
+at 64 characters: `"ada lovelace"@example.com` passes, `ada."lovelace"@example.com`
+doesn't. Escapes in a quoted string take printable ASCII and space. Hostname
+labels with at least one dot, or an address literal: IPv4 (`[192.0.2.1]`) or
+IPv6 (`[IPv6:2001:db8::1]`, the tag in any case), with no more than six
+groups beside a `::`. Anything else in brackets fails as
+`syntax.domain.literal_invalid`. No comments or whitespace.
+
+### rfc5322
+
+RFC 5322's addr-spec with its obsolete syntax:
+
+- dot-separated atoms and quoted strings mixed, like
+  `just."quoted".atoms@example.com`;
+- comments and folding whitespace around every word and label, like
+  `test . test@example.com` and `test.(comment)test@example.com`, with a
+  CRLF only when a space or tab follows it;
+- control characters other than NUL in quoted strings, comments, and domain
+  literals, and any ASCII character after a backslash;
+- any text RFC 5322 allows in a domain literal, like `[RFC-5322-literal]`;
+- any atext in a domain label, like `james@cb$.com`, since RFC 5322's domain
+  is a dot-atom. The hostname rules for hyphens and the 63-character label
+  cap still apply.
+
+There's no 64-character cap on the local part. A dotted domain is still
+required unless `allowNoTld` is on. `allowComments: false` turns comments
+off but keeps the rest of the obsolete syntax, folding whitespace included.
+
+### html5
+
+The WHATWG `input[type=email]` regex: atext and dots anywhere in the local
+part (`john..doe@example.com`, `.ada@example.com`), hostname labels of up
+to 63 characters, and dotless domains (`admin@mailserver1`). No local-part or
+domain cap, but the address can't pass 254 characters, which a browser's
+regex doesn't check. Its grammar is ASCII with no comments or literals, so
+`allowComments`, `allowUnicode`, `allowIdn`, and `allowIpLiteral` can't be
+`true` with it.
+
+## Options
+
+[`SyntaxOptions`](/docs/api/validator-syntax#syntaxoptions) is a flat object:
+a preset and overrides on top of it. Every option also takes `undefined`,
+which means unset.
+
+| Option           | Type                                            | Default                                         | What it does                                                                                                                                   |
+| ---------------- | ----------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `preset`         | [`Preset`](/docs/api/validator-syntax#preset-1) | `'practical'`                                   | The base rule set: `'practical'`, `'rfc5321'`, `'rfc5322'`, or `'html5'`. See [Presets](#presets).                                             |
+| `checkTld`       | `boolean`                                       | `true` in `practical`, else `false`             | Checks the TLD against the bundled IANA set, ignoring case. A dotless domain or a domain literal has no TLD, so it isn't checked.              |
+| `allowNoTld`     | `boolean`                                       | `true` in `html5`, else `false`                 | Accepts a domain with no dot, like `localhost`.                                                                                                |
+| `allowComments`  | `boolean`                                       | `true` in `rfc5322`, else `false`               | Accepts RFC 5322 comments, like `ada(work)@example.com`. `true` throws with `rfc5321` and `html5`.                                             |
+| `allowUnicode`   | `boolean`                                       | `false`                                         | Accepts non-ASCII in the local part (RFC 6531). `true` throws with `html5`. See [International addresses](#international-addresses).           |
+| `allowIdn`       | `boolean`                                       | `false`                                         | Accepts domain labels written as U-labels, like `bücher`. `true` throws with `html5`. See [International addresses](#international-addresses). |
+| `allowIpLiteral` | `boolean`                                       | `true` in `rfc5321` and `rfc5322`, else `false` | Accepts a domain literal. `true` throws with `html5`.                                                                                          |
+| `maxLength`      | `number`                                        | `512`                                           | The longest input accepted, in UTF-16 code units. A positive integer, or `Infinity` for no limit. See [maxLength](#maxlength).                 |
+
+Only `true` throws for an override the preset can't hold; `false` is always
+accepted. `parseAddress` and `isValidSyntax` check the options on every call;
+[`createSyntaxValidator`](/docs/api/validator-syntax#createsyntaxvalidator)
+checks them once and returns a frozen validator. Malformed options throw
+`TypeError`:
+
+- options that aren't an object (`null` included);
+- a key that isn't one of the eight above;
+- an unknown preset;
+- an override that isn't a boolean;
+- a `maxLength` that isn't a positive integer or `Infinity`;
+- `true` for an override the preset can't hold.
+
+Input that isn't a string also throws `TypeError`. Everything else returns a
+result.
+
+### Comments
+
+With `allowComments: true`, `practical` accepts comments only at the ends of
+the local part and the domain, where RFC 5322's dot-atom allows them:
+`(work)ada@example.com` and `ada@example.com(home)` pass, `ada.(work)lovelace@example.com`
+fails as `syntax.comment.not_allowed`. `rfc5322` accepts them around every
+word and label. Comments can nest and hold escapes and folding whitespace.
+They're lifted out of the address into
+[`ParsedAddress.comments`](#parsedaddress).
+
+### maxLength
+
+`maxLength` bounds the input as written: `email.length`, comments and folding
+whitespace included. Longer input fails as `syntax.address.too_long` before
+anything is scanned, so oversized input is rejected in constant time however
+long it is. The default, 512, is twice the address cap, which leaves room for
+comments and folding whitespace. The [address caps](#limits) still apply
+within it.
+
+A validator from `createSyntaxValidator` exposes the limit it applies as
+[`maxLength`](/docs/api/validator-syntax#syntaxvalidator): `512` by default,
+`Infinity` when there's none. Code that trims or otherwise pre-processes input
+before parsing it can check the raw length against it first, so padding can't
+carry input past the limit.
+
+```ts ts2js
+import { createSyntaxValidator } from '@email-utils/validator-syntax';
+
+const validator = createSyntaxValidator();
+validator.maxLength; // => 512
+
+const input = `${' '.repeat(600)}ada@example.com`;
+input.length > validator.maxLength; // => true
+```
+
+### International addresses
+
+`allowUnicode` and `allowIdn` are off in every preset and can be turned on
+in all but `html5`.
+
+- **`allowUnicode`** accepts any non-ASCII character in local-part atoms and
+  quoted strings, like `用户@example.com`, and in comments where comments are
+  allowed. A lone surrogate, which no UTF-8 text can hold, fails as
+  `syntax.local.invalid_char`. The local part then counts in UTF-8 octets,
+  as RFC 6531 keeps the caps: 21 three-byte characters fit in 64 octets, 22
+  don't. It doesn't touch the domain; that's `allowIdn`.
+- **`allowIdn`** accepts domain labels written as U-labels, like
+  `ada@bücher.de`. Each one must convert to an A-label (`xn--bcher-kva`)
+  under UTS #46, as the WHATWG URL parser applies it with its bidi and joiner
+  rules, or it fails as `syntax.domain.label_invalid`. So does a label UTS #46
+  maps to plain ASCII (fullwidth `ｅｘａｍｐｌｅ`) or splits in two (`。`).
+  Each label is judged on its own, so the bidi rule doesn't reach across
+  labels.
+- The 63 and 253 caps apply to the A-label form. A U-label of more than 63
+  code points fails without being converted, since its A-label can't be
+  shorter. Once the A-labels take the domain past 253, the rest aren't
+  converted, and the domain fails as `syntax.domain.too_long` unless
+  something else in the domain fails.
+- `ParsedAddress.domain` and `tld` keep the labels as written; nothing is
+  converted in the result. The TLD check knows IDN TLDs in both forms:
+  `practical` accepts `ada@пример.рф` with `allowIdn`, and
+  `ada@xn--e1afmkfd.xn--p1ai` without it.
+- A-labels are hostname labels, so every preset accepts them without
+  `allowIdn`. They're checked as hostname labels only; the Punycode isn't
+  decoded.
+
+### Domain literals
+
+With literals on, `rfc5321` and `practical` (with `allowIpLiteral: true`)
+accept IPv4 and `IPv6:` address literals only; `rfc5322` also accepts any
+other text its grammar allows in brackets. A literal must be the whole
+domain. With literals off, a `[` fails as `syntax.domain.invalid_char`; with
+them on, a literal that's malformed or never closes fails as
+`syntax.domain.literal_invalid`. A domain literal has no TLD and needs no
+dot.
+
+## What's checked
+
+The first failure wins, in this order:
+
+1. Empty input fails as `syntax.address.empty`.
+2. Input longer than `maxLength` fails as `syntax.address.too_long`.
+3. The address splits on the last `@` outside a quoted string, comment, or
+   domain literal. With none, it fails as `syntax.address.no_at`, or as
+   `syntax.comment.unterminated` at the `(` when a comment that never closes
+   took the `@` with it.
+4. The local part, left to right, then the local-part cap.
+5. The domain, left to right, then the domain cap.
+6. The address cap.
+7. A dotless domain, unless the preset or `allowNoTld` allows it.
+8. The TLD, when `checkTld` is on.
+
+A quoted string opens only at the start of a word; anywhere else a `"` is an
+invalid character. A quoted string, comment, or domain literal left open runs
+to the end of the input, taking any `@` with it.
+
+Whitespace in the local part outside a quoted string fails as
+`syntax.local.unquoted_space` in every preset: a space, a tab, or a folded
+line (a CRLF and a space or tab). `rfc5322` allows folding whitespace between
+tokens, so there it fails only between two words with no dot between them. A
+lone CR or LF is `syntax.local.invalid_char`.
+
+Where a failure has a position, `index` is the UTF-16 offset of the first
+offending character in the whole input: the `(` of a disallowed or
+unterminated comment, the `[` of a bad domain literal, the start of an
+overlong or unconvertible label, the second of two dots, the first whitespace
+outside quotes, and the CR of a CRLF with no space or tab after it. Empty
+input, an empty local part or domain, `maxLength`, a missing `@`, the caps,
+a dotless domain, and the TLD have no position. Every code and what it means is in the
+[reason-code catalogue](/docs/reference/reason-codes#validator-syntax).
+
+## Results
+
+[`parseAddress`](/docs/api/validator-syntax#parseaddress) returns a
+[`Result`](/docs/api/validator-syntax#result):
+
+```ts no-twoslash
+type Result<T> =
+  | { ok: true; value: T }
+  | { ok: false; reason: ReasonCode; message?: string; index?: number };
+```
+
+Branch on `reason`. `message` is for people and may change in any release.
+[`isValidSyntax`](/docs/api/validator-syntax#isvalidsyntax) and a validator's
+`isValid` return `ok` alone.
+
+### ParsedAddress
+
+[`ParsedAddress`](/docs/api/validator-syntax#parsedaddress) is the address as
+written, split and with comments and folding whitespace lifted out. The
+parser doesn't normalize anything.
+
+| Field      | Type                | Holds                                                                                                                                      |
+| ---------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `local`    | `string`            | The local part, case as written. A quoted local part keeps its quotes and escapes; folded lines lose their CRLF but keep the space or tab. |
+| `domain`   | `string`            | The domain, case as written. U-labels stay U-labels; a domain literal keeps its brackets.                                                  |
+| `tld`      | `string` (optional) | The last label, case as written. Absent for a domain literal or a dotless domain.                                                          |
+| `comments` | `AddressComment[]`  | Comments in input order; empty when there are none.                                                                                        |
+
+Each [`AddressComment`](/docs/api/validator-syntax#addresscomment) has the
+comment's `text`, as written between the outer parentheses (nested comments,
+escapes, and folding whitespace included), and its `position`:
+
+- `before-local` and `after-local`: at the start or end of the local part;
+- `before-domain` and `after-domain`: at the start or end of the domain;
+- `inside-local` and `inside-domain`: between the words of the local part or
+  the labels of the domain, which only `rfc5322` allows.
+
+```ts ts2js
+import { parseAddress } from '@email-utils/validator-syntax';
+
+parseAddress('"Ada Lovelace"@Example.COM', { preset: 'rfc5321' });
+// => { ok: true, value: { local: '"Ada Lovelace"', domain: 'Example.COM', tld: 'COM', comments: [] } }
+
+parseAddress('ada(work)@example.com(home)', { preset: 'rfc5322' });
+// => {
+//   ok: true,
+//   value: {
+//     local: 'ada',
+//     domain: 'example.com',
+//     tld: 'com',
+//     comments: [
+//       { text: 'work', position: 'after-local' },
+//       { text: 'home', position: 'after-domain' },
+//     ],
+//   },
+// }
+```
+
+## Limits
+
+| Limit        | Value | Presets                           | Counted in                                                 |
+| ------------ | ----- | --------------------------------- | ---------------------------------------------------------- |
+| `maxLength`  | 512   | All                               | UTF-16 code units of the input as written                  |
+| Address      | 254   | All                               | The local part, `@`, and the domain, each counted as below |
+| Local part   | 64    | `practical`, `rfc5321`            | Characters; UTF-8 octets with `allowUnicode`               |
+| Domain       | 253   | `practical`, `rfc5321`, `rfc5322` | Characters, with U-labels as A-labels                      |
+| Domain label | 63    | All                               | Characters, with a U-label as its A-label                  |
+
+The caps count the address without comments or folding whitespace; only
+`maxLength` counts those. A failed cap has no `index`.
+
+## Fixtures
+
+`@email-utils/validator-syntax/fixtures` publishes the corpus the package is
+tested against, so dependents can check they split and judge addresses the
+same way. Its exports are documented in the
+[fixtures API reference](/docs/api/validator-syntax/fixtures).
+
+- [`syntaxFixtures`](/docs/api/validator-syntax/fixtures#syntaxfixtures):
+  every fixture from every source, each address once.
+- [`legacyFixtures`](/docs/api/validator-syntax/fixtures#legacyfixtures):
+  every address the 0.0.1 test suite checked. Each adds `legacy`, what 0.0.1
+  returned, and `flipped`, why `practical` now disagrees, where it does.
+- [`isemailFixtures`](/docs/api/validator-syntax/fixtures#isemailfixtures):
+  Dominic Sayers' is_email test set (BSD-3-Clause, credited in the package's
+  `THIRD_PARTY_NOTICES.md`). Each adds `isemail`, the test's id.
+- [`wikipediaFixtures`](/docs/api/validator-syntax/fixtures#wikipediafixtures):
+  the examples from Wikipedia's "Email address" article.
+- [`rfc3696Fixtures`](/docs/api/validator-syntax/fixtures#rfc3696fixtures):
+  RFC 3696's examples, as corrected by its erratum 246.
+- [`presets`](/docs/api/validator-syntax/fixtures#presets): the four preset
+  names, in column order.
+- [`syntaxFeatures`](/docs/api/validator-syntax/fixtures#syntaxfeatures): the
+  features the support matrix has a row for, with their labels.
+
+Each fixture has the `address`, a `description`, and `expected`: the result
+under each preset's default options, as `{ ok: true }` or `{ ok: false, reason, index? }`,
+without the value or message. A fixture that's a well-formed example of a
+feature also has `feature`. The set may grow in any minor release.
+
+[`supportMatrix()`](/docs/api/validator-syntax/fixtures#supportmatrix) returns
+one row per feature, with each preset's support: `'yes'` when it accepts every
+fixture tagged with that feature, `'no'` when it accepts none, and
+`'partial'` in between. Each row also carries its fixtures, for examples.
+
+[`previewSyntaxOptions(options?, addresses?)`](/docs/api/validator-syntax/fixtures#previewsyntaxoptions)
+shows what a configuration does. It runs the addresses, or `syntaxFixtures`
+by default, through `createSyntaxValidator(options)` and splits them into
+`valid` and `invalid`, each in input order. Invalid entries carry the
+`reason`, `message`, and `index`. `changed` marks the addresses the overrides
+move, the ones the preset alone would judge the other way; with no
+overrides, nothing is changed. `description` comes from the corpus and is
+absent for addresses you pass in. Malformed options, or `addresses` that
+isn't an array of strings, throw `TypeError` before anything is parsed.
+
+```ts ts2js
+import { isValidSyntax } from '@email-utils/validator-syntax';
+import {
+  previewSyntaxOptions,
+  syntaxFixtures,
+} from '@email-utils/validator-syntax/fixtures';
+
+syntaxFixtures.every(
+  ({ address, expected }) =>
+    isValidSyntax(address, { preset: 'html5' }) === expected.html5.ok,
+); // => true
+
+previewSyntaxOptions({ preset: 'html5' }, [
+  'ada@localhost',
+  'ada@example..com',
+]);
+// => {
+//   valid: [{ address: 'ada@localhost', changed: false }],
+//   invalid: [
+//     { address: 'ada@example..com', reason: 'syntax.domain.label_invalid', index: 12, changed: false },
+//   ],
+// }
+```

@@ -1,0 +1,108 @@
+---
+title: Conventions
+description: The result shape, errors, function forms, and module rules every package follows.
+---
+
+The four packages share one set of rules, so what you learn about one carries
+to the others. Each package's reference covers what's particular to it.
+
+## Results
+
+Every function that validates returns a result rather than a bare boolean or
+a throw:
+
+```ts no-twoslash
+type Result<T> =
+  | { ok: true; value: T }
+  | { ok: false; reason: ReasonCode; message?: string; index?: number };
+```
+
+- `value` is what you were after: a parsed address, a normalized email, or
+  the domain's DNS signals.
+- `reason` is a stable code from the [reason-code
+  catalogue](/docs/reference/reason-codes). A failure carries one code, from
+  the first check that failed.
+- `message` is an English explanation for people and logs. It isn't
+  covered by semver, so branch on `reason`, never on `message`.
+- `index` is the position in the input that failed, where there is one. Only
+  validator-syntax sets it.
+
+Each package exports its own `Result` and `ReasonCode` types, holding only its
+own codes, so no package depends on another for types.
+
+```ts ts2js
+import { parseAddress } from '@email-utils/validator-syntax';
+
+const result = parseAddress('ada..lovelace@example.com');
+if (result.ok) {
+  console.log(result.value.domain);
+} else {
+  console.log(result.reason, result.index);
+  // => syntax.local.consecutive_dots 4
+}
+```
+
+The classifier answers what an address is, not whether it passes, so its
+lookups return plain data: `isDisposable` returns a boolean, and `classify`
+returns an object.
+
+## Reason codes
+
+Codes are dotted lowercase, `<package>.<subject>.<problem>`, with the package
+prefix built in: `syntax.local.too_long`, `dns.mx.none`. All packages share one
+namespace, so a code names its package wherever it ends up.
+
+A released code never changes meaning or disappears within a major version.
+New codes can arrive in a minor version, so give an exhaustive `switch` over
+`reason` a default branch.
+
+## Errors
+
+The packages throw only for programmer errors, and only a `TypeError`:
+
+- input of the wrong type: not a string, or for the classifier and the
+  sanitizer, not a string or a parsed address;
+- options that are malformed: the wrong type, or a value out of range.
+  Every package also rejects option keys it doesn't know, so a misspelled
+  option throws rather than doing nothing.
+
+Anything that is a string, the empty string included, is data, and a problem
+with it comes back as `{ ok: false }`. In validator-dns, lookup failures such
+as a timeout or `SERVFAIL` are results too. Its functions are async, so its
+`TypeError`s reject the promise rather than throw.
+
+The one other rejection is an abort. When the `AbortSignal` you pass to
+validator-dns aborts, the promise rejects with the signal's `reason`, as
+`fetch` does.
+
+## Function forms
+
+Each package exports up to three forms of the same behavior:
+
+1. **A detailed function** that returns a result, or plain data in the
+   classifier: `parseAddress`, `normalizeEmail`, `checkDns`.
+2. **An `isX` boolean** that is exactly the detailed function's `ok`:
+   `isValidSyntax(email, options)` is `parseAddress(email, options).ok`, and
+   `isValidDns` is `checkDns`'s. The two can't disagree.
+3. **A `createX(options)` factory** that checks the options once and binds
+   them: `createSyntaxValidator`, `createClassifier`, `createSanitizer`, and
+   `createDnsValidator`, which also holds its own resolver and cache. Use a
+   factory when you check many addresses with the same options.
+
+The top-level functions take the same options on each call.
+
+validator-syntax, the classifier, and the sanitizer are synchronous and do no
+I/O. validator-dns is async.
+
+## Modules
+
+- Every package ships ESM and CommonJS, with named exports only.
+- `"sideEffects": false` is set everywhere, so a bundler drops what you
+  don't import.
+- validator-syntax, the classifier, and the sanitizer run in the browser and
+  in Node. validator-dns runs in Node, version 22 or later like the others.
+- Subpath entry points hold data you may not need: the classifier's
+  `/providers`, `/disposable`, `/classify`, and `/sources`, and the
+  `/fixtures` test corpora of validator-syntax and the sanitizer. Everything
+  else is at the root.
+- No package writes to the console.
