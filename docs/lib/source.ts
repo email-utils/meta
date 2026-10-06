@@ -3,6 +3,7 @@ import { docsContentRoute, docsRoute } from './shared';
 import { defineDocs } from 'fumadocs-mdx/macro';
 import { applyMdxPreset } from 'fumadocs-mdx/config';
 import { remarkTypeScriptToJavaScript } from 'fumadocs-docgen/remark-ts2js';
+import { remarkSupportMatrix } from './remark-support-matrix';
 import { metaSchema, pageSchema } from 'fumadocs-core/source/schema';
 import { rehypeCodeDefaultOptions } from 'fumadocs-core/mdx-plugins';
 import { transformerTwoslash } from 'fumadocs-twoslash';
@@ -15,7 +16,9 @@ const docs = defineDocs({
     // them back. A ```ts ts2js block renders as TypeScript and JavaScript
     // tabs, and the choice sticks across pages.
     mdxOptions: applyMdxPreset({
+      // The support matrix's tables go in first, so search indexes them.
       remarkPlugins: (plugins) => [
+        remarkSupportMatrix,
         ...plugins,
         [remarkTypeScriptToJavaScript, { persist: { id: 'language' } }],
       ],

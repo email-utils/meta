@@ -3,6 +3,7 @@
   "pages": [
     "conventions",
     "reason-codes",
+    "support-matrix",
     "validator-syntax",
     "classifier",
     "sanitizer",

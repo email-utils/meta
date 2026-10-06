@@ -106,30 +106,11 @@ local-part fields.
 
 ### Providers
 
-| ID                 | Name                       | Kind      | Domains                                                       | Canonical domain | Dots    | Subaddress | Hyphens      | Subdomain addressing |
-| ------------------ | -------------------------- | --------- | ------------------------------------------------------------- | ---------------- | ------- | ---------- | ------------ | -------------------- |
-| `gmail`            | Gmail                      | personal  | gmail.com, googlemail.com                                     | gmail.com        | ignored | `+`        | count        | no                   |
-| `google-workspace` | Google Workspace           | business  | none; found by MX                                             |                  | count   | `+`        | count        | no                   |
-| `outlook`          | Outlook.com                | personal  | outlook.com, hotmail.com, live.com, msn.com, and 24 more      |                  | count   | `+`        | count        | no                   |
-| `microsoft365`     | Microsoft 365              | business  | none; found by MX                                             |                  | count   | `+`        | count        | no                   |
-| `yahoo`            | Yahoo Mail                 | personal  | yahoo.com, myyahoo.com, ymail.com, rocketmail.com, and 9 more |                  | count   | none       | count        | no                   |
-| `aol`              | AOL Mail                   | personal  | aol.com, aim.com, aol.co.uk, aol.de, aol.fr                   |                  | count   | none       | count        | no                   |
-| `icloud`           | iCloud Mail                | personal  | icloud.com, me.com, mac.com                                   | icloud.com       | count   | none       | count        | no                   |
-| `proton`           | Proton Mail                | personal  | proton.me, protonmail.com, protonmail.ch, pm.me               |                  | count   | `+`        | count        | no                   |
-| `fastmail`         | Fastmail                   | personal  | fastmail.com and 129 more                                     |                  | count   | `+`        | count        | yes                  |
-| `zoho`             | Zoho Mail                  | personal  | zoho.com, zohomail.com                                        |                  | count   | none       | count        | no                   |
-| `zoho-business`    | Zoho Mail for business     | business  | none; found by MX                                             |                  | count   | none       | count        | no                   |
-| `yandex`           | Yandex Mail                | personal  | yandex.ru, yandex.com, yandex.by, yandex.kz, ya.ru            | yandex.ru        | count   | `+`        | same as dots | no                   |
-| `yandex-360`       | Yandex 360 for Business    | business  | none; found by MX                                             |                  | count   | none       | count        | no                   |
-| `gmx`              | GMX                        | personal  | gmx.net, gmx.de, gmx.at, gmx.ch, gmx.com, gmx.us, gmx.co.uk   |                  | count   | none       | count        | no                   |
-| `web-de`           | WEB.DE                     | personal  | web.de                                                        |                  | count   | none       | count        | no                   |
-| `mail-ru`          | Mail.ru                    | personal  | mail.ru, inbox.ru, list.ru, bk.ru, internet.ru                |                  | count   | none       | count        | no                   |
-| `tuta`             | Tuta Mail                  | personal  | tuta.com, tutanota.com, tutanota.de, tutamail.com, and 2 more |                  | count   | none       | count        | no                   |
-| `hey`              | HEY                        | personal  | hey.com                                                       |                  | count   | none       | count        | no                   |
-| `namecheap`        | Namecheap Email Forwarding | registrar | none; found by MX                                             |                  | count   | none       | count        | no                   |
+<ProviderTable />
 
-`providers` has every entry, in no particular order, with the full domain
-and MX lists. The IDs are stable: the sanitizer's `provider` option and
+`providers` has every entry, in no particular order, with the full MX
+lists. The [support matrix](/docs/reference/support-matrix#sources) cites the
+source of each entry's domains, MX patterns, and rules. The IDs are stable: the sanitizer's `provider` option and
 `detectProviderByMx` use them.
 
 ### Fields
