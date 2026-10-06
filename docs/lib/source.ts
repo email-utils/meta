@@ -4,6 +4,8 @@ import { defineDocs } from 'fumadocs-mdx/macro';
 import { applyMdxPreset } from 'fumadocs-mdx/config';
 import { remarkTypeScriptToJavaScript } from 'fumadocs-docgen/remark-ts2js';
 import { metaSchema, pageSchema } from 'fumadocs-core/source/schema';
+import { rehypeCodeDefaultOptions } from 'fumadocs-core/mdx-plugins';
+import { transformerTwoslash } from 'fumadocs-twoslash';
 
 const docs = defineDocs({
   dir: 'content/docs',
@@ -17,6 +19,16 @@ const docs = defineDocs({
         ...plugins,
         [remarkTypeScriptToJavaScript, { persist: { id: 'language' } }],
       ],
+      rehypeCodeOptions: {
+        ...rehypeCodeDefaultOptions,
+        transformers: [
+          ...(rehypeCodeDefaultOptions.transformers ?? []),
+          // Every ts and tsx block is compiled against the packages installed
+          // from npm, and a type error fails the build. `no-twoslash` in a
+          // block's meta opts it out.
+          transformerTwoslash({ explicitTrigger: false }),
+        ],
+      },
     }),
     postprocess: {
       includeProcessedMarkdown: true,

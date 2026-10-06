@@ -53,17 +53,24 @@ updates:
         update-types: ['version-update:semver-major']
 
   # The docs site, its own npm project. Fumadocs' packages release in step and
-  # pin each other, so they update together.
+  # pin each other, so they update together. The site's code samples are
+  # checked against the `@email-utils/*` packages, so those come daily and
+  # skip the cooldown, as in the packages; everything else waits it out.
   - package-ecosystem: npm
     directory: /docs
     schedule:
-      interval: weekly
+      interval: daily
     cooldown:
       default-days: 7
+      exclude:
+        - '@email-utils/*'
     commit-message:
       prefix: chore
       include: scope
     groups:
+      email-utils:
+        patterns:
+          - '@email-utils/*'
       fumadocs:
         patterns:
           - 'fumadocs-*'
