@@ -1,0 +1,89 @@
+---
+title: Support matrix
+description: Which address features each preset accepts, how a Null MX is handled, each provider's rules and their sources, and what's out of scope.
+---
+
+The tables on this page are built from the packages as the site builds: the
+syntax rows from validator-syntax's test corpus, the provider rows from the
+classifier's registry, and the rest by running the packages on fixed
+examples. They describe the versions these docs are built against, and they
+change only when the packages do.
+
+## Address syntax
+
+One row per address feature of RFC 5321 and RFC 5322, plus the forms a
+preset accepts outside them. A cell says whether the preset, with its
+default options, accepts the corpus fixtures that are well-formed examples
+of the feature: Yes for all of them, No for none, and Partial, with a count,
+for some. The example is one of those fixtures, with any control characters
+shown as their Unicode symbols, like ␀ for NUL.
+
+<SyntaxSupport />
+
+[`supportMatrix()`](/docs/api/validator-syntax/fixtures#supportmatrix)
+returns the same rows, with every fixture. [Presets](/docs/reference/validator-syntax#presets)
+describes each preset's rules, and options such as `allowComments` and
+`allowIpLiteral` change what a preset accepts; `previewSyntaxOptions` shows
+how (see [Fixtures](/docs/reference/validator-syntax#fixtures)).
+
+## International addresses
+
+RFC 6531 extends SMTP to UTF-8: non-ASCII characters in the local part, and
+domain labels written as U-labels (§3.3). Each cell runs `isValidSyntax` on
+the example with the preset's defaults, then with the option that covers it.
+
+<InternationalSupport />
+
+See [International addresses](/docs/reference/validator-syntax#international-addresses)
+for what each option accepts and the length caps that still apply.
+
+## Null MX
+
+A Null MX (RFC 7505) is an MX record whose host is `.`, published to say a
+domain receives no mail. validator-dns checks it, not validator-syntax, so
+presets don't apply. These rows run `checkDns` on a stub resolver that
+answers with the MX records shown and one A record.
+
+<NullMxSupport />
+
+See [What's checked](/docs/reference/validator-dns#whats-checked) for the
+order validator-dns decides in.
+
+## Providers
+
+The classifier's provider registry: each entry's domains and the local-part
+rules the sanitizer's provider-aware normalization uses.
+[Provider registry](/docs/reference/classifier#provider-registry) says what
+each field means.
+
+<ProviderTable />
+
+### Sources
+
+Each entry cites its domains, its MX patterns, and every rule that differs
+from the default, from [`providerSources`](/docs/api/classifier/sources#providersources).
+"DNS lookup" marks a fact the provider documents nowhere, read from its DNS
+instead. Checked is when the fact was last compared with its source.
+
+<ProviderSources />
+
+## Not supported
+
+### Mailbox probing
+
+No package asks a mail server whether a mailbox exists by sending SMTP
+`RCPT TO`. validator-dns's [SMTP probe](/docs/reference/validator-dns#smtp-probes)
+stops after `EHLO`: it learns whether a mail server answers, never whether a
+mailbox exists.
+
+`RCPT TO` doesn't answer that question reliably:
+
+- Many servers accept every recipient and bounce later, or deliver anything
+  for the domain to one mailbox, so a `250` doesn't mean the mailbox exists.
+- Greylisting and rate limits answer with temporary failures, so a `4xx`
+  doesn't mean it doesn't.
+- Providers treat repeated probes from one address as abuse and block it,
+  which then stops that address's real mail too.
+
+The only proof that a mailbox exists, and belongs to the person who typed
+it, is mail they receive: send a confirmation link.

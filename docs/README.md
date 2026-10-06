@@ -3,7 +3,9 @@
 The [Fumadocs](https://fumadocs.dev) site for `@email-utils`, published to
 GitHub Pages at <https://email-utils.github.io/meta/>. It's a Next.js static
 export (`basePath: '/meta'`) with static Orama search; pages live in
-`content/docs/`, and the hand-written reference in `content/docs/reference/`. It's its own npm project, separate from meta's root.
+`content/docs/`, and the hand-written reference in `content/docs/reference/`. The support
+matrix's tables are filled in by `lib/remark-support-matrix.ts` from the
+installed packages as the site builds. It's its own npm project, separate from meta's root.
 
 ```sh
 npm ci               # also installs typedoc/
