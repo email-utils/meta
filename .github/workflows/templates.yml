@@ -1,0 +1,91 @@
+name: Templates
+
+# Tests a change to templates/synced against each package before it merges,
+# one leg per package: the package's main with this PR's templates copied
+# over it, as `mani run sync-config` would, then the checks its PR gate runs.
+# meta's own lint can't do this: the shared oxlint rules are type-aware, so
+# they need a package's tsconfig and dependencies. Like Config drift, it
+# isn't a required check, since it only runs when the templates change.
+#
+# Never `npm run corpus`: validator-dns's corpus probes third-party mail
+# servers, and runs by hand only.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - templates/synced/**
+      - .github/workflows/templates.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  package:
+    name: ${{ matrix.package }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    permissions:
+      contents: read # check out meta and the package
+    strategy:
+      fail-fast: false
+      matrix:
+        # The projects tagged `package` in mani.yaml.
+        package: [validator-syntax, classifier, sanitizer, validator-dns]
+    defaults:
+      run:
+        shell: bash
+        working-directory: packages/${{ matrix.package }}
+    env:
+      # lefthook's install script would set up git hooks that never run here.
+      LEFTHOOK: 0
+    steps:
+      - name: Check out meta
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out ${{ matrix.package }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: email-utils/${{ matrix.package }}
+          path: packages/${{ matrix.package }}
+          persist-credentials: false
+
+      # Before Node, so the template's .nvmrc picks the version. Like
+      # sync-config, it doesn't delete a file the templates dropped.
+      - name: Apply the templates
+        run: cp -R "$GITHUB_WORKSPACE/templates/synced/." .
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: packages/${{ matrix.package }}/.nvmrc
+          cache: npm
+          cache-dependency-path: packages/${{ matrix.package }}/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The package step runs scripts/api-report.ts, which is synced too.
+      - name: Lint, format, typecheck, test, and check the package
+        id: run
+        run: |
+          {
+            npm run pre-commit &&
+              npm run test:coverage &&
+              npm run build &&
+              npm run check:package
+          } 2>&1 | tee "$RUNNER_TEMP/output.log"
+
+      - name: Write job summary
+        if: always()
+        uses: ./.github/actions/job-summary
+        with:
+          check-name: Templates (${{ matrix.package }})
+          outcome: ${{ steps.run.outcome }}
+          log-file: ${{ runner.temp }}/output.log
+          details: >-
+            ${{ steps.run.outcome == 'failure' && 'The templates in this PR break this package. Fix the templates, or land the package change they need first.' || '' }}

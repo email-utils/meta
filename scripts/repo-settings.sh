@@ -20,7 +20,8 @@ actions_app=15368
 # The checks each repo's ruleset requires, as GitHub reports them. The
 # packages' come from templates/synced/.github/workflows; `checks / audit`
 # is non-blocking, so it's left out. Meta's come from its own pr-gate.yml;
-# its Config drift legs report rather than gate. .github has no CI.
+# its Config drift and Templates legs report rather than gate. .github has
+# no CI.
 package_checks=(
   'pr-title / pr-title'
   'checks / lint'
