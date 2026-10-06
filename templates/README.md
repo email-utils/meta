@@ -13,6 +13,8 @@ mani run check-config    # fail on any package whose copy has drifted
 
 `check-config` runs [`check-config.sh`](check-config.sh). So does meta's **Config drift** workflow, which checks each package's `main` daily and on any meta PR that changes `synced/`. On a template PR, that check stays red until every package has merged its sync PR, so rerun it once they have. It isn't a required check.
 
+On the same PRs, meta's **Templates** workflow copies `synced/` over each package's `main` and runs `npm ci`, `pre-commit`, `test:coverage`, `build`, and `check:package`, so a template that breaks a package fails before it merges rather than on the sync PRs. It isn't a required check either. When a template change needs a package change too, land the package change first.
+
 | File                                                            | Purpose                                                                                                                                                          |
 | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `.prettierrc`, `.prettierignore`                                | Prettier 3: `semi: true`, `singleQuote: true`, `trailingComma: all`, `endOfLine: lf`                                                                             |
