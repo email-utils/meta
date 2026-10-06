@@ -16,7 +16,7 @@
     "lint:plugin": "claude plugin validate . && claude plugin validate plugins/email-utils"
   },
   "devDependencies": {
-    "@anthropic-ai/claude-code": "^2.1.283",
+    "@anthropic-ai/claude-code": "^2.1.285",
     "prettier": "^3.9.9"
   },
   "allowScripts": {
