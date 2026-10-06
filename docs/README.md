@@ -22,6 +22,15 @@ const domain: string = 'example.com';
 ```
 ````
 
+Every `ts` and `tsx` block is compiled with
+[Twoslash](https://fumadocs.dev/docs/markdown/twoslash) against the
+`@email-utils` packages in `package.json`, installed from npm (`next` until
+1.0.0), so samples are checked against what readers install. A type error
+fails `npm run build` and `npm run lint:links`. Hovering an identifier on the
+site shows its type and TSDoc. A sample that's meant to fail marks the error
+it expects with `// @errors: <code>`, and `no-twoslash` in a block's meta
+skips the check. Dependabot bumps the packages daily.
+
 `.github/workflows/docs.yml` runs the typecheck, the link check, and the build
 on every PR that touches `docs/`, and deploys to Pages from `main`.
 

@@ -59,6 +59,9 @@ jobs:
       - name: Check links
         run: npm run lint:links
 
+      # Twoslash compiles every ts and tsx sample against the packages in
+      # docs/package.json, from npm, whenever the pages compile. A type error
+      # fails the link check above, which compiles them first, and the build.
       - name: Build the site
         run: npm run build
 
