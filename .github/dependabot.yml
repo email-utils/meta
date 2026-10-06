@@ -74,3 +74,23 @@ updates:
       fumadocs:
         patterns:
           - 'fumadocs-*'
+
+  # The API reference's generator, its own npm project inside the site's.
+  # TypeDoc supports TypeScript up to 6, so TypeScript stays on 6 until a
+  # TypeDoc release supports 7.
+  - package-ecosystem: npm
+    directory: /docs/typedoc
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      typedoc:
+        patterns:
+          - '*'
+    ignore:
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']

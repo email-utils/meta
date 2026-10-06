@@ -6,4 +6,5 @@ package-lock.json
 docs/.next/
 docs/out/
 docs/.source/
+docs/content/docs/api/
 docs/next-env.d.ts

@@ -3,10 +3,15 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "postinstall": "npm ci --prefix typedoc --no-audit --no-fund",
+    "api": "tsx typedoc/generate.mts",
     "build": "next build",
+    "prebuild": "npm run api",
     "dev": "next dev",
+    "predev": "npm run api",
     "start": "serve out",
     "lint:links": "tsx scripts/check-links.mts",
+    "prelint:links": "npm run api",
     "types:check": "next typegen && tsc --noEmit"
   },
   "dependencies": {
