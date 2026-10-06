@@ -1,0 +1,327 @@
+---
+title: sanitizer
+description: The sanitizer's three forms, how the key is built, its options and provider rules, input handling, results, and the fixtures subpath.
+---
+
+The sanitizer answers "what is its canonical form?" One parse of an address
+gives a uniqueness key to store and compare, the address to email, and its
+SMTP envelope form, with the key built from the classifier's provider
+registry. It's synchronous and runs in the browser and in Node.
+
+```sh
+npm install @email-utils/sanitizer@next
+```
+
+Until 1.0.0, the v1 release candidates are on the `next` tag. Every export's
+signature is in the [API reference](/docs/api/sanitizer).
+
+## Forms
+
+[`normalizeEmail`](/docs/api/sanitizer#normalizeemail) returns three forms of
+one address, all from the same parse, so they can't disagree about what the
+input was.
+
+| Form       | What it's for                                                                                                      |
+| ---------- | ------------------------------------------------------------------------------------------------------------------ |
+| `key`      | Identity. Two inputs that reach the same mailbox get the same key. Store it and compare it; never send mail to it. |
+| `address`  | The address to email, as the person typed it, tidied. Valid in RFC 5322 headers such as `To:`.                     |
+| `envelope` | `address` without comments. Valid in the SMTP envelope (RFC 5321), such as `RCPT TO`, and in most sending APIs.    |
+
+```ts ts2js
+import { createSanitizer } from '@email-utils/sanitizer';
+
+const sanitize = createSanitizer({ syntax: { allowComments: true } });
+const result = sanitize.normalize('Ada.Lovelace+news(work)@GoogleMail.com');
+if (result.ok) {
+  console.log(result.value.key);
+  // => adalovelace@gmail.com
+  console.log(result.value.address);
+  // => Ada.Lovelace+news(work)@googlemail.com
+  console.log(result.value.envelope);
+  // => Ada.Lovelace+news@googlemail.com
+}
+```
+
+The forms differ in how much they strip:
+
+| Step                           | `key`         | `envelope` | `address` |
+| ------------------------------ | ------------- | ---------- | --------- |
+| Trim surrounding whitespace    | ✓             | ✓          | ✓         |
+| Lowercase the domain           | ✓             | ✓          | ✓         |
+| Remove comments                | ✓             | ✓          | —         |
+| Lowercase the local part       | ✓             | —          | —         |
+| Drop quotes that aren't needed | ✓             | —          | —         |
+| Fold subdomain addressing      | provider rule | —          | —         |
+| Map a domain alias             | provider rule | —          | —         |
+| Remove the subaddress tag      | provider rule | —          | —         |
+| Spell hyphens as dots          | provider rule | —          | —         |
+| Remove dots in the local part  | provider rule | —          | —         |
+
+`address` keeps the local part's case, its dots, its subaddress tag, and its
+quotes, so mail still reaches the person's filters. Comments stay on their
+side of the `@`; a comment between the words of the local part or the labels
+of the domain moves to the end of that part.
+
+## How the key is built
+
+The key is built in this order:
+
+1. **Lowercase and unquote the local part.** Quotes that aren't needed are
+   dropped, so `"Ada"@gmail.com`, `"a".da@example.com`, and the unquoted
+   spellings share a key. Where the quotes are needed (`"a.da+x y"@gmail.com`),
+   they stay, and steps 4 to 7 leave the local part alone, including the
+   `removePeriods` and `removeSubaddress` overrides. Step 2 can still
+   replace it.
+2. **Fold subdomain addressing.** On a provider with subdomain addressing,
+   `news@ada.fastmail.com` delivers to `ada@fastmail.com`, and that's its
+   key. Only one ASCII label above one of the provider's domains folds:
+   `x@ü.fastmail.com` keeps its domain. The folded local part then goes
+   through steps 4 to 7.
+3. **Map a domain alias.** On a provider with a canonical domain, each of
+   its domains maps to it: `googlemail.com` to `gmail.com`, `me.com` and
+   `mac.com` to `icloud.com`, and `ya.ru` and the other Yandex domains to
+   `yandex.ru`.
+4. **Remove the subaddress tag.** The tag starts at the first separator:
+   `me+a+b@gmail.com` keys as `me@gmail.com`. When nothing comes before the
+   separator (`+news@gmail.com`), the local part is kept whole.
+5. **Spell hyphens as dots,** on Yandex only: `Ada-Lovelace@yandex.ru` keys
+   as `ada.lovelace@yandex.ru`.
+6. **Remove dots,** on Gmail only unless `removePeriods` says otherwise.
+7. **Tidy dots.** Where the steps above leave a dot at either end or two
+   together, it's dropped: `a.+x@outlook.com` keys as `a@outlook.com`. Where
+   they'd leave nothing, the local part is kept as it was before step 4
+   (`-@yandex.ru`). Where steps 4 to 6 changed nothing, the local part isn't
+   tidied, so html5's `a..b@example.com` keys as itself.
+
+With `providerRules: false`, or on a domain with no known provider, steps 2,
+3, and 5 don't run, step 4 runs only with `removeSubaddress: true`, and step
+6 only with `removePeriods: true`.
+
+The key is itself an address the same options parse, and normalizing it again
+gives it back. A domain alias can lengthen the key; where it would take the
+key past the 254 characters an address may have (`rfc5322` and `html5`
+don't cap the local part), the domain stays as written. See
+[Limits](#limits) for the one case where a key doesn't parse again.
+
+## Options
+
+[`NormalizeOptions`](/docs/api/sanitizer#normalizeoptions) is the second
+argument to `normalizeEmail` and the only argument to
+[`createSanitizer`](/docs/api/sanitizer#createsanitizer). Every option is
+optional, and `undefined` means the default. All but `syntax` affect only
+the key.
+
+| Option                | Type            | Default                               | What it does                                                                                                                         |
+| --------------------- | --------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `syntax`              | `SyntaxOptions` | validator-syntax's `practical` preset | How a string is parsed. See [`SyntaxOptions`](/docs/api/validator-syntax#syntaxoptions).                                             |
+| `provider`            | `string`        | detected from the domain              | The provider when it's known from elsewhere. Overrides detection from the domain. An ID the registry doesn't know means no provider. |
+| `providerRules`       | `boolean`       | `true`                                | Apply the provider's rules to the key. `false` also leaves `provider` off the result.                                                |
+| `removePeriods`       | `boolean`       | provider-driven                       | Remove the local part's dots, or keep them, whatever the provider.                                                                   |
+| `removeSubaddress`    | `boolean`       | provider-driven                       | Remove the subaddress tag, or keep it, whatever the provider.                                                                        |
+| `subaddressSeparator` | `string`        | `'+'`                                 | The separator `removeSubaddress: true` splits on when the provider has none. Exactly one character.                                  |
+
+- **`provider` is usually what validator-dns found.** The domain alone can't
+  show that `mycompany.com` is on Google Workspace; validator-dns's
+  [`detectProviderByMx`](/docs/api/validator-dns#detectproviderbymx-1) can,
+  from its MX records. Once you pass `provider`, nothing is detected, even
+  when the ID is unknown or the domain belongs to another provider:
+  `provider: 'outlook'` keeps the dots in a `gmail.com` key.
+- **Overrides work in both directions.** `removePeriods: false` keeps
+  Gmail's dots; `removeSubaddress: true` drops `+` tags on a domain with no
+  known provider. They apply with `providerRules: false` too.
+- **The provider's separator wins.** `subaddressSeparator` is used only when
+  the provider has no separator, or there's no provider. On Gmail, the tag
+  still starts at `+`.
+
+```ts ts2js
+import { normalizeEmail } from '@email-utils/sanitizer';
+
+// The provider found from mycompany.com's MX records.
+const result = normalizeEmail('A.da+news@mycompany.com', {
+  provider: 'google-workspace',
+});
+if (result.ok) {
+  console.log(result.value.key);
+  // => a.da@mycompany.com
+}
+```
+
+### Option checks
+
+Malformed options throw `TypeError`:
+
+- options that aren't an object;
+- a key the sanitizer doesn't know, so a misspelled or 0.0.1-style option
+  such as `removePlusTag` throws `Unknown option: removePlusTag`. A key set to
+  `undefined` is fine;
+- a `provider` that isn't a string, or a flag that isn't a boolean;
+- a `subaddressSeparator` that isn't exactly one UTF-16 code unit: `'--'`,
+  `''`, and an emoji all throw.
+
+`syntax` is checked by validator-syntax, which also throws on keys it doesn't
+know.
+
+`createSanitizer` checks the options and looks up `provider` once, when it's
+called. `normalizeEmail` does it on every call, so bind options with
+`createSanitizer` when you normalize many addresses with the same ones.
+
+## Provider rules
+
+The rules come from the classifier's provider
+[registry](/docs/api/classifier/providers#providers). A provider is detected
+from the address's domain. Providers that only host their customers' own
+domains have no domains to detect, so their rules apply only through the
+`provider` option.
+
+| Provider (`id`)    | Detected from                                         | Key domain   | Separator | Dots removed | Hyphens as dots | Subdomain addressing |
+| ------------------ | ----------------------------------------------------- | ------------ | --------- | ------------ | --------------- | -------------------- |
+| `gmail`            | `gmail.com`, `googlemail.com`                         | `gmail.com`  | `+`       | yes          | no              | no                   |
+| `google-workspace` | `provider` option only                                | as written   | `+`       | no           | no              | no                   |
+| `outlook`          | `outlook.com`, `hotmail.com`, `live.com`, and 25 more | as written   | `+`       | no           | no              | no                   |
+| `microsoft365`     | `provider` option only                                | as written   | `+`       | no           | no              | no                   |
+| `yahoo`            | `yahoo.com`, `ymail.com`, and 11 more                 | as written   | none      | no           | no              | no                   |
+| `aol`              | `aol.com`, `aim.com`, and 3 more                      | as written   | none      | no           | no              | no                   |
+| `icloud`           | `icloud.com`, `me.com`, `mac.com`                     | `icloud.com` | none      | no           | no              | no                   |
+| `proton`           | `proton.me`, `protonmail.com`, and 2 more             | as written   | `+`       | no           | no              | no                   |
+| `fastmail`         | `fastmail.com`, `fastmail.fm`, and 128 more           | as written   | `+`       | no           | no              | yes                  |
+| `zoho`             | `zoho.com`, `zohomail.com`                            | as written   | none      | no           | no              | no                   |
+| `zoho-business`    | `provider` option only                                | as written   | none      | no           | no              | no                   |
+| `yandex`           | `yandex.ru`, `ya.ru`, and 3 more                      | `yandex.ru`  | `+`       | no           | yes             | no                   |
+| `yandex-360`       | `provider` option only                                | as written   | none      | no           | no              | no                   |
+| `gmx`              | `gmx.net`, `gmx.de`, and 5 more                       | as written   | none      | no           | no              | no                   |
+| `web-de`           | `web.de`                                              | as written   | none      | no           | no              | no                   |
+| `mail-ru`          | `mail.ru`, `inbox.ru`, and 3 more                     | as written   | none      | no           | no              | no                   |
+| `tuta`             | `tuta.com`, `tutanota.com`, and 4 more                | as written   | none      | no           | no              | no                   |
+| `hey`              | `hey.com`                                             | as written   | none      | no           | no              | no                   |
+| `namecheap`        | `provider` option only                                | as written   | none      | no           | no              | no                   |
+
+- **A provider with no separator keeps tags.** `ada+news@yahoo.com` keys as
+  itself; `removeSubaddress: true` splits it on `subaddressSeparator`.
+- **Gmail and Google Workspace differ.** Dots are ignored on `gmail.com` and
+  `googlemail.com` but change the mailbox on Workspace domains, so
+  `a.da@mycompany.com` and `ada@mycompany.com` keep different keys.
+- **A domain with no known provider keeps its dots and tags.** `+` can be a
+  literal part of a mailbox name there, and merging two people under one key
+  would block the second from signing up.
+- **Only the provider's own domains fold.** `ada.fastmail.com` is detected
+  as Fastmail, one label deep; `news@a.b.fastmail.com` isn't. A subdomain of
+  a custom domain doesn't fold: `x@ada.mycompany.com` with
+  `provider: 'fastmail'` keeps its domain.
+
+## Input
+
+`normalizeEmail` and a sanitizer's `normalize` take a string or a parsed
+address.
+
+- **A string is trimmed, then parsed.** Only spaces, tabs, CRs, and LFs are
+  trimmed, the whitespace validator-syntax knows. Unicode spaces such as
+  U+00A0 stay, since an RFC 6531 local part may start or end with one, and
+  the `syntax` options then decide whether the address parses.
+- **Surrounding whitespace counts toward `maxLength`.** A string longer than
+  the `syntax` options' `maxLength` (512 by default) fails before it's
+  trimmed, so oversized input is rejected in constant time however it's
+  padded.
+- **A parsed address is used as is.** Pass the
+  [`ParsedAddress`](/docs/api/validator-syntax#parsedaddress) from
+  validator-syntax's [`parseAddress`](/docs/api/validator-syntax#parseaddress),
+  or any object with string `local` and `domain`, and it isn't trimmed,
+  parsed, or checked against the `syntax` options again. Its domain is still
+  lowercased, its `comments`, if any, go into `address`, and a missing
+  `comments` is treated as none. An empty `local` or `domain` fails.
+- **Anything else throws `TypeError`:** a value that's neither a string nor
+  an object with string `local` and `domain`. The empty string is data, and
+  fails with a result. See [Conventions](/docs/reference/conventions#errors).
+
+## Results
+
+Every call returns a `Result`:
+
+```ts no-twoslash
+type Result<T> =
+  { ok: true; value: T } | { ok: false; reason: ReasonCode; message?: string };
+
+interface NormalizedEmail {
+  key: string;
+  address: string;
+  envelope: string;
+  provider?: ProviderId;
+}
+```
+
+- **`value`** is a [`NormalizedEmail`](/docs/api/sanitizer#normalizedemail)
+  with the three [forms](#forms).
+- **`provider`** is the ID of the provider whose rules built the key: the
+  `provider` option when it names a registry entry, otherwise the provider
+  detected from the domain. It's set even when the rules change nothing, as
+  for `ada@yahoo.com`. It's absent when no provider is known, when the
+  `provider` option names an unknown ID, and when `providerRules` is
+  `false`.
+- **A failure** carries `reason` and an English `message`, and never an
+  `index`. The input fails when a string is longer than `maxLength`, when
+  the `syntax` options reject it (the empty string included), or when a
+  parsed address has an empty half. The codes are in the
+  [reason-code catalogue](/docs/reference/reason-codes#sanitizer).
+
+## Limits
+
+- **Domains are only lowercased.** There's no IDN conversion, so
+  `ada@bücher.de` and `ada@xn--bcher-kva.de` get different keys.
+- **A tiny `maxLength` can stop a key from parsing again.** A domain alias
+  lengthens the key, and with `syntax: { maxLength: 8 }`, `a@me.com` keys as
+  `a@icloud.com`, 12 characters, which then fails the limit. It can't happen
+  at the default of 512, which is over the 254 characters a key can reach.
+
+## Fixtures
+
+`@email-utils/sanitizer/fixtures` publishes the corpus the package is tested
+against, so you can check that your own code keys addresses the same way,
+and preview a configuration on real addresses.
+
+### sanitizerFixtures
+
+[`sanitizerFixtures`](/docs/api/sanitizer/fixtures#sanitizerfixtures) is a
+read-only array. Each fixture has the `input`, surrounding whitespace and
+all; a `description`; and `expected`, the result under the default options:
+`ok: true` with `key`, `address`, `envelope`, and `provider` when there is
+one, or `ok: false` with the `reason` and no `message`.
+
+It covers Gmail dots, the `googlemail.com` alias, `+` and `-` tags, Fastmail
+subdomains, Yandex hyphens, Workspace against Gmail, comments, quotes, and
+inputs that fail to parse. Some features only show with an option: the
+default `practical` syntax rejects comments, quotes, and TLDs outside the
+IANA set, a domain with no known provider keeps its tags, no registry
+provider splits on `-`, and a Workspace domain needs the `provider` option.
+Those fixtures also carry `with`: the `options` that turn the feature on,
+and the `expected` result under them. Fixtures can be added in any minor
+release.
+
+### previewSanitizerOptions
+
+[`previewSanitizerOptions(options?, addresses?)`](/docs/api/sanitizer/fixtures#previewsanitizeroptions)
+runs addresses through `createSanitizer(options)` and splits them into
+`valid`, the ones it normalizes, with their forms, and `invalid`, the ones
+it can't, with `reason` and `message`. Each list keeps input order. It
+normalizes the corpus's inputs by default, or the addresses you pass. Each
+entry has the `input` and, for a corpus input, its `description`.
+
+`changed` marks the inputs your options move, compared with the default
+options:
+
+- a `valid` entry is changed when the defaults reject it, or give a
+  different `key`, `address`, `envelope`, or `provider`;
+- an `invalid` entry is changed when the defaults normalize it.
+
+With no options, nothing is changed. The corpus is judged by your options
+alone; a fixture's `with` isn't applied. Malformed options, or `addresses`
+that isn't an array of strings, throw `TypeError` before anything is
+normalized.
+
+```ts ts2js
+import { previewSanitizerOptions } from '@email-utils/sanitizer/fixtures';
+
+const preview = previewSanitizerOptions({ syntax: { allowComments: true } });
+console.log(
+  preview.valid.filter((entry) => entry.changed).map((entry) => entry.input),
+);
+// => [ 'Ada(work)@gmail.com', '(home)ada@(mx)example.com' ]
+```

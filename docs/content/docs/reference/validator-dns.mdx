@@ -1,0 +1,486 @@
+---
+title: validator-dns
+description: What validator-dns looks up, how it decides, its options, cache, SMTP probes, and score models.
+---
+
+validator-dns answers whether an address's domain can receive mail. It looks
+up the domain's MX, A, AAAA, and TXT records, judges them by RFC rules, and
+reports everything it learned as signals. It can also name the provider that
+hosts the domain's mail, probe its mail servers over SMTP, and score how
+likely they are to accept a connection. It's async and runs in Node.
+
+```sh
+npm install @email-utils/validator-dns@next
+```
+
+Until 1.0.0, the v1 release candidates are on the `next` tag. Signatures and
+TSDoc for every export are in the [API reference](/docs/api/validator-dns).
+
+```ts ts2js
+import { checkDns } from '@email-utils/validator-dns';
+
+const result = await checkDns('ada@example.com');
+if (result.ok) {
+  console.log(result.value.mxHosts);
+} else {
+  console.log(result.reason);
+}
+```
+
+## Functions
+
+| Function                                                             | Resolves to                                                    |
+| -------------------------------------------------------------------- | -------------------------------------------------------------- |
+| [`checkDns`](/docs/api/validator-dns#checkdns)                       | `Result<DnsSignals>`: whether the domain can receive mail      |
+| [`isValidDns`](/docs/api/validator-dns#isvaliddns)                   | `boolean`: exactly `checkDns`'s `ok`                           |
+| [`detectProviderByMx`](/docs/api/validator-dns#detectproviderbymx-1) | `Result<ProviderId \| undefined>`: who hosts the domain's mail |
+| [`probeSmtp`](/docs/api/validator-dns#probesmtp-1)                   | `Result<SmtpProbe>`: whether its mail servers answer           |
+| [`scoreDns`](/docs/api/validator-dns#scoredns)                       | `Result<DnsScore>`: how likely they are to accept a connection |
+
+Each takes an address or a domain and the [`DnsOptions`](#dnsoptions).
+[`createDnsValidator`](/docs/api/validator-dns#creatednsvalidator) takes
+[`DnsValidatorOptions`](#dnsvalidatoroptions), checks them once, and returns a
+validator whose `check`, `isValid`, `detectProviderByMx`, `probeSmtp`, and
+`score` methods do the same with those options, its own resolver, and its own
+[cache](#cache). The methods take only a per-call `signal`.
+
+`isValidDns` is `false` both when the domain can't receive mail and when a
+lookup it needed failed; `checkDns`'s `reason` tells which.
+
+## Input
+
+The input is a string: an address, or a bare domain. Anything else rejects
+with a `TypeError`. Before any lookup, the input goes through these steps,
+and fails with `dns.address.unparsable` at the first one it doesn't pass:
+
+1. **Length.** Input longer than `syntax.maxLength`, 512 characters by
+   default, fails unread. The length is checked before trimming, so
+   surrounding whitespace counts toward it. `maxLength: Infinity` turns the
+   cap off.
+2. **Parsing.** The input is trimmed. A string without an `@` is taken as a
+   bare domain; one with an `@` is parsed as a whole address, so its local
+   part must pass too. Parsing uses the `syntax` options, which default to
+   validator-syntax's `practical` preset with `allowIdn` on. That preset
+   checks the TLD against the IANA set and wants at least one dot, so
+   `localhost` and `example.invalid` fail here. The failure's `message` is
+   validator-syntax's.
+3. **Domain literal.** A domain literal such as `ada@[192.0.2.1]` has no
+   records to look up. The `practical` preset already rejects it; the
+   `rfc5321` and `rfc5322` presets accept it, and it fails here.
+4. **Hostname.** An `rfc5322` domain can hold characters no hostname can,
+   such as `a#b.com`, and fails here.
+5. **A-label.** The domain is converted to its A-label form with Node's
+   `domainToASCII`, which lowercases it and maps each Unicode label to its
+   `xn--` form: `Bücher.DE` is looked up as `xn--bcher-kva.de`.
+
+No lookup is made for input that fails. `allowIdn` is added to any `syntax`
+options you pass unless you set it yourself or pick the `html5` preset,
+which can't hold IDN domains; `syntax: { allowIdn: false }` makes an IDN
+domain fail at step 2.
+
+## What's checked
+
+The domain's MX, A, AAAA, and TXT records are looked up at once, for the
+domain itself. NS isn't looked up, and no parent domain is tried. Each
+lookup comes back one of three ways:
+
+- **Records**, or **no records**: an empty answer, or a rejection with Node's
+  `ENODATA` or `ENOTFOUND` code.
+- **Timed out**: it ran past its [time budget](#time-budgets), or the
+  resolver rejected with `ETIMEOUT`.
+- **Failed**: any other rejection, such as `ESERVFAIL`.
+
+The check then decides, in this order:
+
+1. The MX lookup timed out or failed: the check fails with
+   `dns.lookup.timeout` or `dns.lookup.failed`.
+2. The MX answer is a Null MX and nothing else: the check fails with
+   `dns.mx.null`, even when the domain has A or AAAA records. A Null MX
+   (RFC 7505) is an MX record whose host is `.`, published to say the
+   domain receives no mail.
+3. The MX answer names hosts: the check passes. A Null MX next to other MX
+   records, which RFC 7505 forbids, is ignored apart from setting `nullMx`.
+4. There's no MX, but A or AAAA has records: the check passes, with the
+   domain itself as the implicit MX (RFC 5321 §5.1).
+5. Neither: when the A lookup timed out or failed, the check fails with its
+   reason; when the AAAA lookup did, with that one's. Otherwise it fails with
+   `dns.domain.not_found` when the TXT lookup found no records either, and
+   with `dns.mx.none` when TXT has records or its lookup didn't succeed.
+
+So a failed lookup fails the check only when the answer rests on it: MX
+always, and A or AAAA when there's no MX and neither has records. Any other
+failed lookup leaves its signal `undefined` rather than `false`: a flaky TXT
+server doesn't fail a domain that receives mail, and a score can tell "no
+SPF" from "not known".
+
+**SPF.** `hasSpf` is `true` when a TXT record, its chunks joined, starts with
+`v=spf1` followed by a space or nothing (RFC 7208 §4.5), in any case. The SPF
+record is only detected, not evaluated.
+
+The failure codes are listed in the
+[reason-code catalogue](/docs/reference/reason-codes#validator-dns). A
+failure's `message` says which lookup it was, and for `dns.lookup.failed` the
+resolver's error code when there is one, such as
+`The MX lookup failed with ESERVFAIL`.
+
+## Results
+
+A passing check's `value` is a
+[`DnsSignals`](/docs/api/validator-dns#dnssignals):
+
+| Field        | Type                   | Meaning                                                                                                         |
+| ------------ | ---------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `hasMx`      | `boolean`              | The domain has MX records other than a Null MX.                                                                 |
+| `nullMx`     | `boolean`              | A Null MX was published next to other MX records, which RFC 7505 forbids. A Null MX on its own fails the check. |
+| `implicitMx` | `boolean`              | No MX, so the domain's A or AAAA records serve as the implicit MX. Always the opposite of `hasMx`.              |
+| `hasA`       | `boolean \| undefined` | The domain has A records; `undefined` when the lookup timed out or failed.                                      |
+| `hasAaaa`    | `boolean \| undefined` | The domain has AAAA records; `undefined` when the lookup timed out or failed.                                   |
+| `hasSpf`     | `boolean \| undefined` | A TXT record is an SPF record; `undefined` when the lookup timed out or failed.                                 |
+| `mxHosts`    | `string[]`             | The MX hosts, lowercased and without the trailing dot, in preference order. Empty for an implicit MX.           |
+
+`mxHosts` is sorted by MX preference, lowest first. Hosts of equal preference
+keep the order the resolver gave them in, and a host listed twice, in any
+case or with and without the trailing dot, appears once, in its first place.
+A Null MX is never in it. A repeated host doesn't count as a Null MX.
+
+A failure is `{ ok: false, reason, message }`, with no `index`. The package
+exports its `Result` and `ReasonCode` types, which hold only the `dns.*`
+codes.
+
+```ts
+import {
+  createDnsValidator,
+  type DnsResolver,
+} from '@email-utils/validator-dns';
+
+// A stub, as in tests. Leave `resolver` out to use node:dns/promises.
+const resolver: DnsResolver = {
+  resolveMx: async () => [{ exchange: 'SMTP.Google.com.', priority: 1 }],
+  resolve4: async () => ['192.0.2.1'],
+  resolve6: async () => [],
+  resolveTxt: async () => [['v=spf1 include:_spf.google.com ~all']],
+};
+const validator = createDnsValidator({ resolver });
+
+await validator.check('ada@example.com');
+// => { ok: true, value: { hasMx: true, nullMx: false, implicitMx: false,
+//      hasA: true, hasAaaa: false, hasSpf: true, mxHosts: ['smtp.google.com'] } }
+
+await validator.detectProviderByMx('example.com');
+// => { ok: true, value: 'google-workspace' }
+```
+
+## Options
+
+Options are checked before any lookup: on each call to a top-level function,
+and once by `createDnsValidator`. Every function checks all of them, `smtp`
+and `scoreModel` included when it doesn't use them. A malformed option is a
+`TypeError`: the functions and a validator's methods reject with it, and
+`createDnsValidator` throws it. So is a key that isn't an option, at any
+level: `{ timout: 100 }` gives `Unknown option: timout`, and a misspelled
+`timeout.qeury` gives `Unknown option: timeout.qeury`. A key set to
+`undefined` takes the default. The top-level functions don't take
+`resolver` or `cacheTtl`, which only `createDnsValidator` does.
+
+### DnsOptions
+
+Taken by every function, and by `createDnsValidator`.
+[API](/docs/api/validator-dns#dnsoptions).
+
+| Option       | Type                                                        | Default                            | What it does                                                                                                                                    |
+| ------------ | ----------------------------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `syntax`     | [`SyntaxOptions`](/docs/api/validator-syntax#syntaxoptions) | `practical` preset with `allowIdn` | How the input is [parsed](#input), and its `maxLength` cap. Malformed options are validator-syntax's `TypeError`.                               |
+| `timeout`    | [`DnsTimeout`](#dnstimeout)                                 | see below                          | Time budgets for the lookups.                                                                                                                   |
+| `signal`     | `AbortSignal`                                               | none                               | [Aborts](#aborting) the call, which rejects with the signal's `reason`.                                                                         |
+| `smtp`       | [`SmtpOptions`](#smtpoptions)                               | see below                          | How `probeSmtp` probes. The other functions check it but don't use it.                                                                          |
+| `scoreModel` | `'dns-reachability' \| 'dns-only' \| DnsScoreModel`         | `'dns-reachability'`               | The model `scoreDns` scores with: a [bundled model](#bundled-models) by name, or [your own](#custom-models). Any other string is a `TypeError`. |
+
+### DnsTimeout
+
+[API](/docs/api/validator-dns#dnstimeout).
+
+| Option    | Type     | Default | What it does                                             |
+| --------- | -------- | ------- | -------------------------------------------------------- |
+| `query`   | `number` | `2000`  | How long each lookup may take, in milliseconds.          |
+| `overall` | `number` | `5000`  | How long the lookups may take together, in milliseconds. |
+
+Each is a number of milliseconds above 0 and at most 2³¹ − 1 (2147483647),
+the longest delay `setTimeout` takes.
+
+### Time budgets
+
+The four lookups run in parallel, and each is bounded by the smaller of
+`query` and `overall`. So the whole check never runs past `overall`, but
+`overall` only has an effect when it's lower than `query`. With the
+defaults, every check settles within 2 seconds, whatever the resolver does.
+
+A lookup that runs over counts as timed out, and the rules in
+[What's checked](#whats-checked) apply to it: a silent MX server fails the
+check with `dns.lookup.timeout`, and a silent TXT server leaves `hasSpf`
+`undefined`. A check whose four answers are all cached settles without a
+timer. The budgets don't cover SMTP probes, which have `smtp.timeout`.
+
+### DnsValidatorOptions
+
+Taken by `createDnsValidator`: every [`DnsOptions`](#dnsoptions) field, plus
+these. [API](/docs/api/validator-dns#dnsvalidatoroptions).
+
+| Option     | Type          | Default             | What it does                                                                                                                 |
+| ---------- | ------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `resolver` | `DnsResolver` | `node:dns/promises` | Where the lookups go. It must have all four methods: `resolveMx`, `resolve4`, `resolve6`, and `resolveTxt`.                  |
+| `cacheTtl` | `number`      | `30000`             | How long an answer stays cached, in milliseconds. `0` or more, `Infinity` included. `0` caches nothing. See [Cache](#cache). |
+
+A [`DnsResolver`](/docs/api/validator-dns#dnsresolver) has the four methods
+as `node:dns/promises` has them. A method that finds no records may resolve to
+`[]` or reject with an error whose `code` is `ENODATA` or `ENOTFOUND`; any
+other rejection is a failed lookup, and `ETIMEOUT` a timed-out one. The
+resolver is used for the lookups only: `probeSmtp` connects to MX hosts by
+name through Node's `net` and `tls` modules, which look up their addresses
+with the operating system's resolver.
+
+### DnsCallOptions
+
+Taken by each method of a validator.
+[API](/docs/api/validator-dns#dnscalloptions).
+
+| Option   | Type          | Default | What it does                                              |
+| -------- | ------------- | ------- | --------------------------------------------------------- |
+| `signal` | `AbortSignal` | none    | Aborts this call, alongside the validator's own `signal`. |
+
+### SmtpOptions
+
+Used by `probeSmtp` and a validator's `probeSmtp` method.
+[API](/docs/api/validator-dns#smtpoptions).
+
+| Option          | Type                | Default                                | What it does                                                                                                      |
+| --------------- | ------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `ports`         | `readonly number[]` | `[25]`                                 | The ports to probe on each host. A non-empty array of integers from 1 to 65535; repeated ports are probed once.   |
+| `ehloName`      | `string`            | the connection's local address literal | The name sent with EHLO. Printable ASCII without spaces.                                                          |
+| `timeout`       | `number`            | `10000`                                | How long each probe may take, from connecting to the reply to EHLO, in milliseconds. Above 0 and at most 2³¹ − 1. |
+| `untilAccepted` | `boolean`           | `false`                                | Probe one host at a time, in preference order, and stop at the first that accepts.                                |
+
+Port 25 is where MX hosts take mail from other servers. 465 speaks TLS from
+the first byte (RFC 8314); every other port speaks plain SMTP. See
+[SMTP probes](#smtp-probes).
+
+## Cache
+
+`checkDns`, `isValidDns`, `detectProviderByMx`, `probeSmtp`, and `scoreDns`
+share one module-wide cache over `node:dns/promises`, which keeps answers for
+30 seconds. Each validator from `createDnsValidator` has its own cache, with
+its own `resolver` and `cacheTtl`, shared by all its methods: a
+`detectProviderByMx` after a `check` of the same domain reuses its MX answer.
+
+- **Keys.** Answers are kept per record type and A-label domain, so
+  `Bücher.de` and `xn--bcher-kva.de` share them.
+- **TTL.** An answer stays for `cacheTtl` from when it arrives. The records'
+  own DNS TTLs aren't read.
+- **What's kept.** Records, and "no records". A failed or timed-out lookup is
+  never kept: the next check asks again.
+- **In flight.** A lookup already in flight is joined rather than made again,
+  so a thousand concurrent checks of one domain make one lookup per record
+  type. `cacheTtl: 0` keeps the joining and caches nothing else.
+- **Joined lookups.** A check that joins a lookup gets its answer but is
+  still held to its own time budget and signals. The lookup keeps the
+  `query` budget of the check that started it.
+- **Size.** Each record type keeps at most 10,000 answers. When it's full,
+  the one added longest ago is dropped to make room.
+
+## Aborting
+
+`signal` in the options, and a validator method's per-call `signal`, abort a
+call. A validator's own signal and the call's both apply.
+
+- An aborted call rejects with the signal's `reason`: an `AbortError`
+  `DOMException`, unless you gave `abort()` a reason of your own.
+- A signal that's already aborted rejects before the input is parsed or any
+  lookup is made.
+- A lookup other checks share keeps going for them, and its answer is cached
+  as usual.
+- `probeSmtp` closes its connections.
+
+An abort is the one rejection besides a `TypeError`. Timeouts and resolver
+errors are results, never rejections.
+
+## Provider detection
+
+[`detectProviderByMx`](/docs/api/validator-dns#detectproviderbymx-1) looks up
+the domain's MX alone, through the same parsing, time budgets, signals, and
+cache as `checkDns`, and matches the hosts against the `mxPatterns` of the
+installed [`@email-utils/classifier/providers`](/docs/api/classifier/providers#providers)
+registry.
+
+- A pattern names one host exactly, or with a leading `*.`, any host one or
+  more labels under the rest: `*.mail.protection.outlook.com` matches
+  `example-com.mail.protection.outlook.com` but not
+  `mail.protection.outlook.com`. A host that only contains a pattern
+  matches nothing.
+- The hosts are tried in preference order, and the first one the registry
+  knows names the provider, so a domain behind a filtering gateway is still
+  found by its backup MX.
+- The value is the classifier's
+  [`ProviderId`](/docs/api/classifier/providers#providerid), which
+  `getProvider` and the sanitizer's `provider` option take:
+  `'google-workspace'` for `smtp.google.com` or `aspmx.l.google.com`,
+  `'microsoft365'`, `'namecheap'` for the registrar's default forwarding MX.
+- The value is `undefined` when no host matches, including a domain with no
+  MX (an implicit MX has no host to match), a Null MX, or no records at all.
+
+It fails only when it can't tell: `dns.address.unparsable` for input that
+doesn't parse, and `dns.lookup.timeout` or `dns.lookup.failed` when the MX
+lookup does. It never fails with `dns.mx.null`, `dns.mx.none`, or
+`dns.domain.not_found`.
+
+## SMTP probes
+
+[`probeSmtp`](/docs/api/validator-dns#probesmtp-1) runs `checkDns` first, and
+fails as it does, before any connection. Then it probes each MX host, in
+`mxHosts` order, or for an implicit MX the domain itself, on every port in
+`smtp.ports`. A probe connects, reads the greeting, sends EHLO, and sends
+QUIT. It never sends MAIL or RCPT, so it learns whether a mail server
+answers, not whether a mailbox exists.
+
+On port 465 the connection is TLS from the start, with the host name sent as
+SNI, and the certificate is checked as Node checks it by default.
+
+**EHLO name.** By default it's the address literal of the connection's local
+end, as RFC 5321 §4.1.3 writes it: `[192.0.2.1]`, or `[IPv6:2001:db8::1]`.
+An IPv4-mapped IPv6 address is written as IPv4. `smtp.ehloName` replaces it.
+
+**Outcomes.** Each probe settles as one of:
+
+| Outcome       | When                                                                                                                                                                                                                                                                                    |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `accepted`    | The server greeted with 220, then answered EHLO with 250.                                                                                                                                                                                                                               |
+| `refused`     | The greeting wasn't 220 or the EHLO reply wasn't 250; a reply line was malformed; the server hung up before replying; it sent over 64 KiB without completing a reply; TLS failed, a certificate that doesn't verify included; or the connection failed with any error not listed below. |
+| `unreachable` | Nothing took the connection: `ECONNREFUSED`, `EHOSTUNREACH`, `ENETUNREACH`, `EADDRNOTAVAIL`, `ENOTFOUND`, `EAI_AGAIN`, `EAI_FAIL`, or `EAI_NONAME`.                                                                                                                                     |
+| `timeout`     | No greeting or EHLO reply within `smtp.timeout`, or the connection failed with `ETIMEDOUT`.                                                                                                                                                                                             |
+
+Each [`SmtpPortProbe`](/docs/api/validator-dns#smtpportprobe) has the `host`,
+`port`, and `outcome`; `code`, the last reply's code (EHLO's, or the
+greeting's), absent when there was none; and `message`, for people, which
+names the error code where there is one. Reply lines are read as RFC 5321
+§4.2.1 has them, so a multiline reply counts once.
+
+**Result.** The [`SmtpProbe`](/docs/api/validator-dns#smtpprobe) has
+`accepted`, whether any probe was, and `probes`, each host in preference
+order and each port in order for each host. A probe's outcome is data, not a
+failure: a domain whose every probe is refused is still `{ ok: true }`.
+
+**All at once, or one host at a time.** By default every host is probed on
+every port at once, and the call waits for all of them, so it takes the
+lookups' budget plus at most `smtp.timeout`. With `smtp.untilAccepted`, the
+hosts are probed one after another, each on every port at once, and probing
+stops after the first host with an `accepted` probe. `accepted` means the
+same; `probes` lists only the hosts tried. It takes fewer connections, and up
+to one `smtp.timeout` per host when hosts don't answer.
+
+**Where it runs.** Many networks block outbound port 25, home ISPs and cloud
+hosts among them. From there every probe comes back `timeout` or
+`unreachable` whatever the domain does, so read those as "couldn't connect
+from here", not "the domain is dead".
+
+## Scoring
+
+[`scoreDns`](/docs/api/validator-dns#scoredns) runs `checkDns`, and fails as
+it does: a domain the RFCs say can't receive mail has no score. Then it
+estimates, from the DNS signals alone, the chance that one of the domain's
+mail servers accepts a connection: greets with 220 and answers EHLO with 250
+on port 25. No probe is made.
+
+The estimate is a logistic model:
+
+```txt
+probability = 1 / (1 + e^-(intercept + Σ coefficient × feature))
+```
+
+Each [`ScoreFeature`](/docs/api/validator-dns#scorefeature) enters it as a
+number:
+
+| Feature                                                      | Value                                                                                                                  |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `hasMx`, `nullMx`, `implicitMx`, `hasA`, `hasAaaa`, `hasSpf` | 1 when `true`; 0 when `false`, or `undefined` from a failed lookup.                                                    |
+| `mxHosts`                                                    | The number of MX hosts.                                                                                                |
+| `knownProvider`                                              | 1 when the MX matches a provider in the installed classifier's registry, the match `detectProviderByMx` makes; else 0. |
+| `multipleMx`                                                 | 1 when there's more than one MX host; else 0.                                                                          |
+
+The [`DnsScore`](/docs/api/validator-dns#dnsscore) has:
+
+- `probability`: the estimate, from 0 to 1;
+- `signals`: the `DnsSignals` the check found;
+- `contributions`: what each feature the model has a coefficient for added
+  to the log-odds, its coefficient times its value, zeros included;
+- `model`: the model's `id` and `version`.
+
+There's no pass mark. For the bundled models, pick a threshold from the
+precision and recall table in the
+[model report](https://github.com/email-utils/validator-dns/blob/main/model/report-1.0.0.md),
+for the mix of false accepts and false rejects you can live with.
+
+### Bundled models
+
+`scoreModel` picks one of two models by name. Both are version `1.0.0`. The
+model report's calibration tables compare each model's scores with how many
+domains held out of the fit actually accepted mail.
+
+| Term            | `dns-reachability` | `dns-only` |
+| --------------- | ------------------ | ---------- |
+| intercept       | -3.50735           | -3.7078    |
+| `hasMx`         | 4.31163            | 4.66821    |
+| `hasA`          | -0.141008          | -0.232622  |
+| `hasAaaa`       | -0.195878          | 0.11184    |
+| `hasSpf`        | 0.606265           | 0.634      |
+| `knownProvider` | 3.66963            |            |
+| `multipleMx`    |                    | 0.749704   |
+
+- **`dns-reachability`**, the default, also counts `knownProvider`. Domains
+  whose MX the registry knows accepted almost without exception, which makes
+  it the strongest feature, and in practice the only way to a score above
+  about 0.9. A classifier release that adds a provider can raise the scores
+  of that provider's domains.
+- **`dns-only`** reads the DNS signals alone, for a score that doesn't move
+  when the registry grows.
+
+How the models were fitted and measured is in
+[METHODOLOGY.md](https://github.com/email-utils/validator-dns/blob/main/model/METHODOLOGY.md).
+
+```ts
+import {
+  createDnsValidator,
+  type DnsResolver,
+} from '@email-utils/validator-dns';
+
+const resolver: DnsResolver = {
+  resolveMx: async () => [{ exchange: 'smtp.google.com', priority: 1 }],
+  resolve4: async () => ['192.0.2.1'],
+  resolve6: async () => [],
+  resolveTxt: async () => [['v=spf1 include:_spf.google.com ~all']],
+};
+const validator = createDnsValidator({ resolver });
+
+const scored = await validator.score('example.com');
+if (scored.ok) {
+  scored.value.probability.toFixed(3); // => '0.993'
+  scored.value.contributions;
+  // => { hasMx: 4.31163, hasA: -0.141008, hasAaaa: 0, hasSpf: 0.606265,
+  //      knownProvider: 3.66963 }
+}
+```
+
+### Custom models
+
+`scoreModel` also takes a
+[`DnsScoreModel`](/docs/api/validator-dns#dnsscoremodel) of your own, which
+replaces the bundled ones and their calibration with it. It must have:
+
+- `id` and `version`: non-empty strings, reported back in `model`;
+- `intercept`: a number from -1e6 to 1e6;
+- `coefficients`: an object whose keys are `ScoreFeature` names and whose
+  values are numbers from -1e6 to 1e6. A feature it leaves out, or sets to
+  `undefined`, isn't counted; a key that isn't a feature is a `TypeError`,
+  whatever its value.
+
+The ±1e6 bound is far past any fitted model's weights, and keeps the
+log-odds from overflowing to `NaN`. The model is checked before any lookup,
+by every function, not only `scoreDns`, and copied, so changing your object
+later has no effect.

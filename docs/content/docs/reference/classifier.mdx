@@ -1,0 +1,409 @@
+---
+title: classifier
+description: The classifier's entry points, input handling, provider registry, role and disposable checks, typo suggestions, and options.
+---
+
+`@email-utils/classifier` answers what an address is: which mailbox provider
+serves it, whether it's on a throwaway domain or names a role rather than a
+person, and whether its domain looks like a typo. It's synchronous, does no
+I/O, and runs in the browser and in Node.
+
+```sh
+npm install @email-utils/classifier@next
+```
+
+Until 1.0.0, the v1 release candidates are on the `next` tag. The
+[API reference](/docs/api/classifier) has every export's signature.
+
+```ts ts2js
+import { classify } from '@email-utils/classifier/classify';
+
+classify('ceo@mailinator.com');
+// => { provider: undefined, disposable: true, role: true, suggestion: undefined }
+classify('ada@gmial.com').suggestion; // => 'ada@gmail.com'
+```
+
+## Entry points
+
+The package has five entry points. The disposable-domain list is the largest
+piece of data, so the root entry never loads it: `isDisposable` and
+`classify`, which uses it, are in their own entries.
+
+| Entry point                          | Exports                                                                                                                | Loads                                                                                |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `@email-utils/classifier`            | `getProvider`, `isRoleAccount`, `suggestCorrection`, `packageName`; types `ProviderId`, `ProviderInfo`, `ProviderKind` | The provider registry, the role list, the typo tables, and validator-syntax's parser |
+| `@email-utils/classifier/providers`  | `providers`, `getProvider`; the same three types                                                                       | The provider registry and validator-syntax's parser                                  |
+| `@email-utils/classifier/disposable` | `isDisposable`                                                                                                         | The disposable-domain list and validator-syntax's parser                             |
+| `@email-utils/classifier/classify`   | `classify`, `createClassifier`, `defaultIgnore`; types `ClassifyOptions`, `Classification`, `Classifier`, `Keyboard`   | Everything the root and `/disposable` load                                           |
+| `@email-utils/classifier/sources`    | `providerSources`; types `ProviderRule`, `ProviderSource`                                                              | Only the citations, with no code from the other entries                              |
+
+`/sources` maps each provider ID to the pages behind its registry entry: the
+field each source backs, its URL (absent when the fact was read from DNS),
+the date it was last checked, and a note. It's separate so that callers of
+the registry don't ship the URLs. See
+[`providerSources`](/docs/api/classifier/sources#providersources).
+
+## Input
+
+Every lookup takes a string or a
+[`ParsedAddress`](/docs/api/validator-syntax#parsedaddress) from
+validator-syntax.
+
+- **Strings** are parsed with validator-syntax's `practical`
+  [preset](/docs/reference/validator-syntax#practical), so the classifier splits an
+  address exactly as the parser does. A string the preset rejects is an
+  address the classifier knows nothing about: no provider, not disposable,
+  not a role account. That covers display names, surrounding whitespace,
+  comments, quoted local parts, domain literals, dotless domains, and
+  unknown TLDs.
+- **Strings over 254 characters** are treated as unknown without being
+  parsed.
+- **Internationalized domains** in a string must be written as A-labels
+  (`xn--…`). A string with a U-label domain, like `admin@bücher.de`, is
+  treated as unknown, since `practical` doesn't allow non-ASCII.
+- **A `ParsedAddress`** is used as given, without being checked again. One
+  with an empty local part or domain is treated as unknown. A quoted local
+  part keeps its quotes, so `"admin"` isn't a role account.
+- **Anything else**, such as a number, `null`, or an object without string
+  `local` and `domain`, throws a `TypeError`.
+
+`suggestCorrection` is the one exception to the parse: it reads strings with
+the TLD check turned off, since a mistyped TLD like `.con` is what it's there
+to fix.
+
+```ts
+import { isRoleAccount } from '@email-utils/classifier';
+import { parseAddress } from '@email-utils/validator-syntax';
+
+const result = parseAddress('Support+billing@example.com');
+if (result.ok) {
+  isRoleAccount(result.value); // => true
+}
+```
+
+## Provider registry
+
+[`getProvider`](/docs/api/classifier#getprovider) returns the registry entry
+whose domains the address is on, compared without case, or `undefined`. The
+entry it returns is the same object that's in
+[`providers`](/docs/api/classifier/providers#providers), not a copy, so don't
+change it.
+
+```ts
+import { getProvider } from '@email-utils/classifier';
+
+getProvider('ada@googlemail.com')?.canonicalDomain; // => 'gmail.com'
+getProvider('news@ada.fastmail.com')?.id; // => 'fastmail'
+getProvider('ada@example.com'); // => undefined
+```
+
+A custom domain hosted on a provider, such as a company's domain on Google
+Workspace, can't be told from the domain alone, so `getProvider` returns
+`undefined` for it. validator-dns's `detectProviderByMx` finds those by
+matching the domain's MX hosts against each entry's `mxPatterns`, and
+returns the same provider IDs. The sanitizer's provider rules read the
+local-part fields.
+
+### Providers
+
+| ID                 | Name                       | Kind      | Domains                                                       | Canonical domain | Dots    | Subaddress | Hyphens      | Subdomain addressing |
+| ------------------ | -------------------------- | --------- | ------------------------------------------------------------- | ---------------- | ------- | ---------- | ------------ | -------------------- |
+| `gmail`            | Gmail                      | personal  | gmail.com, googlemail.com                                     | gmail.com        | ignored | `+`        | count        | no                   |
+| `google-workspace` | Google Workspace           | business  | none; found by MX                                             |                  | count   | `+`        | count        | no                   |
+| `outlook`          | Outlook.com                | personal  | outlook.com, hotmail.com, live.com, msn.com, and 24 more      |                  | count   | `+`        | count        | no                   |
+| `microsoft365`     | Microsoft 365              | business  | none; found by MX                                             |                  | count   | `+`        | count        | no                   |
+| `yahoo`            | Yahoo Mail                 | personal  | yahoo.com, myyahoo.com, ymail.com, rocketmail.com, and 9 more |                  | count   | none       | count        | no                   |
+| `aol`              | AOL Mail                   | personal  | aol.com, aim.com, aol.co.uk, aol.de, aol.fr                   |                  | count   | none       | count        | no                   |
+| `icloud`           | iCloud Mail                | personal  | icloud.com, me.com, mac.com                                   | icloud.com       | count   | none       | count        | no                   |
+| `proton`           | Proton Mail                | personal  | proton.me, protonmail.com, protonmail.ch, pm.me               |                  | count   | `+`        | count        | no                   |
+| `fastmail`         | Fastmail                   | personal  | fastmail.com and 129 more                                     |                  | count   | `+`        | count        | yes                  |
+| `zoho`             | Zoho Mail                  | personal  | zoho.com, zohomail.com                                        |                  | count   | none       | count        | no                   |
+| `zoho-business`    | Zoho Mail for business     | business  | none; found by MX                                             |                  | count   | none       | count        | no                   |
+| `yandex`           | Yandex Mail                | personal  | yandex.ru, yandex.com, yandex.by, yandex.kz, ya.ru            | yandex.ru        | count   | `+`        | same as dots | no                   |
+| `yandex-360`       | Yandex 360 for Business    | business  | none; found by MX                                             |                  | count   | none       | count        | no                   |
+| `gmx`              | GMX                        | personal  | gmx.net, gmx.de, gmx.at, gmx.ch, gmx.com, gmx.us, gmx.co.uk   |                  | count   | none       | count        | no                   |
+| `web-de`           | WEB.DE                     | personal  | web.de                                                        |                  | count   | none       | count        | no                   |
+| `mail-ru`          | Mail.ru                    | personal  | mail.ru, inbox.ru, list.ru, bk.ru, internet.ru                |                  | count   | none       | count        | no                   |
+| `tuta`             | Tuta Mail                  | personal  | tuta.com, tutanota.com, tutanota.de, tutamail.com, and 2 more |                  | count   | none       | count        | no                   |
+| `hey`              | HEY                        | personal  | hey.com                                                       |                  | count   | none       | count        | no                   |
+| `namecheap`        | Namecheap Email Forwarding | registrar | none; found by MX                                             |                  | count   | none       | count        | no                   |
+
+`providers` has every entry, in no particular order, with the full domain
+and MX lists. The IDs are stable: the sanitizer's `provider` option and
+`detectProviderByMx` use them.
+
+### Fields
+
+- **`kind`:** `personal` for a mailbox service anyone can sign up for, free
+  or paid. `business` for hosting an organization's own domain; these
+  entries have no `domains`. `registrar` for a registrar's default
+  forwarding MX, which a domain has before its owner sets up mail, so mail
+  may be forwarded anywhere or nowhere.
+- **`canonicalDomain`:** when set, all the entry's domains share mailboxes,
+  and keys use this one.
+- **`dotsSignificant`:** whether dots in the local part change the mailbox.
+  `false` only for Gmail; dots do count on Google Workspace domains.
+- **`subaddressSeparator`:** the character that starts a subaddress tag,
+  such as `+`. Absent when the provider has none.
+- **`hyphensSignificant`:** whether a hyphen in the local part is its own
+  character. `false` only for Yandex, where `my-address` and `my.address`
+  are one mailbox.
+- **`subdomainAddressing`:** whether `tag@user.<domain>` delivers to
+  `user@<domain>`. When it's true, `getProvider` also matches one-label
+  subdomains of the entry's domains, so `news@ada.fastmail.com` is Fastmail
+  but `news@a.b.fastmail.com` isn't.
+
+The registry records only what each provider documents. A rule a provider
+doesn't document keeps the default: dots and hyphens count, no subaddress
+separator, no subdomain addressing. Merging two people's addresses under one
+key is worse than missing a duplicate.
+
+Providers that sell both personal mailboxes and hosting for custom domains
+have two entries when the two use different MX hosts, so that an MX match
+reports the right `kind`: `gmail` and `google-workspace`, `outlook` and
+`microsoft365`, `zoho` and `zoho-business`, `yandex` and `yandex-360`.
+
+## Role accounts
+
+[`isRoleAccount`](/docs/api/classifier#isroleaccount) is true when the local
+part names a function rather than a person. It compares the local part
+without case and without a `+` tag, so `Admin+alerts@example.com` counts.
+Separators aren't folded: each common spelling is listed, so `no-reply`,
+`no_reply`, and `noreply` all count, but `no.reply` doesn't. The list:
+
+- **RFC 2142 and RFC 5321:** `abuse`, `ftp`, `hostmaster`, `info`,
+  `marketing`, `news`, `noc`, `postmaster`, `sales`, `security`, `support`,
+  `usenet`, `uucp`, `webmaster`, `www`.
+- **Senders that take no replies:** `donotreply`, `do-not-reply`,
+  `do_not_reply`, `mailer-daemon`, `noreply`, `no-reply`, `no_reply`.
+- **Running the system:** `admin`, `administrator`, `it`, `root`,
+  `sysadmin`.
+- **Teams and desks:** `accounting`, `accounts`, `billing`, `careers`,
+  `compliance`, `contact`, `customerservice`, `enquiries`, `feedback`,
+  `finance`, `hello`, `help`, `helpdesk`, `hr`, `inquiries`, `jobs`,
+  `legal`, `media`, `office`, `orders`, `press`, `privacy`, `service`,
+  `team`.
+- **Lists and notifications:** `alerts`, `all`, `everyone`, `newsletter`,
+  `notifications`, `staff`.
+- **Offices rather than their holders:** `ceo`, `cfo`, `coo`, `cto`.
+
+## Disposable domains
+
+[`isDisposable`](/docs/api/classifier/disposable#isdisposable) is true when
+the address's domain, or a parent of it, is a known throwaway-mailbox
+domain: `ada@mailinator.com` and `ada@x.mailinator.com` both are.
+
+- **Source:** the
+  [disposable-email-domains](https://github.com/disposable-email-domains/disposable-email-domains)
+  blocklist (CC0 1.0), about 9,000 domains, vendored into the package. A
+  newer package version brings a newer copy. `THIRD_PARTY_NOTICES.md`, which
+  ships with the package, attributes it.
+- **Parent domains:** the list holds registrable domains, so the check walks
+  from the full domain up to its last two labels. A TLD on its own never
+  matches, and a listed name in the middle of a domain doesn't either:
+  `ada@mailinator.com.example.org` isn't disposable.
+- **Case and IDNs:** the domain is compared without case, and an
+  internationalized domain in a `ParsedAddress` by its A-label.
+- **Never disposable:** domain literals, and any string the `practical`
+  preset rejects (see [Input](#input)). No registry domain is on the list.
+- **Loading:** the list is one string in the module, split into a set on
+  the first call, so importing `/disposable` or `/classify` costs one string
+  literal until you check an address.
+
+## Typo suggestions
+
+[`suggestCorrection`](/docs/api/classifier#suggestcorrection) returns the
+address with its domain corrected when the domain looks like a slip for a
+common mailbox domain, and `undefined` otherwise. The local part is kept as
+written; the domain comes back in lowercase, so `Ada@GMIAL.COM` gives
+`Ada@gmail.com`. The root `suggestCorrection` uses the default options; to
+change them, use the one on a [classifier](#classifiers-and-per-call-options).
+
+### How a domain is matched
+
+1. A string is parsed with `practical` minus its TLD check. A string over
+   254 characters, or one that still doesn't parse, gets no suggestion.
+2. A domain that's never corrected (see [below](#never-corrected)) gets no
+   suggestion.
+3. If the TLD is one of the slips in the table below, it's fixed first. If
+   the fixed domain is in `ignore`, there's no suggestion: `ada@mail.con`
+   gets none. If the fixed domain is a registry domain or in `domains`,
+   that's the suggestion. Otherwise the fixed domain is matched against the
+   targets as in step 4, and suggested as it is if none is close enough:
+   `ada@gmial.con` gives `ada@gmail.com`, and `ada@example.con` gives
+   `ada@example.com`.
+4. Otherwise the domain is taken for the closest target within `maxEdits`
+   edits, the earlier one on a tie: `ada@hotmail.dr` gives `ada@hotmail.fr`
+   rather than `ada@hotmail.de`. No target that close means no suggestion.
+
+The distance is the optimal string alignment distance. Inserting a
+character, deleting one, or swapping two neighboring characters is one
+edit, so `gamil.com` is one edit from `gmail.com`. A substitution is one
+edit when the two keys are close enough on the keyboard, and two otherwise,
+the same as a deletion and an insertion.
+
+| Typed TLD                                                                                            | Fixed to |
+| ---------------------------------------------------------------------------------------------------- | -------- |
+| `con`, `cmo`, `ocm`, `vom`, `xom`, `cpm`, `cim`, `ckm`, `clm`, `cmm`, `comm`, `coom`, `ccom`, `comn` | `com`    |
+| `nte`, `ner`, `nwt`, `nett`                                                                          | `net`    |
+| `ogr`, `orh`, `prg`, `ort`, `orgg`                                                                   | `org`    |
+
+None of these is a real TLD.
+
+### Keyboard distance
+
+Each layout places its letters and digits as on an ANSI or ISO board, each
+row offset from the one above. Two keys are neighbors when they sit side by
+side in a row or touch diagonally in the row above or below, and the
+distance between two keys is the number of steps between neighbors. A
+substitution counts as one edit when the keys are at most `maxKeyDistance`
+apart, which is 1, neighbors only, by default:
+
+- `gotmail.com` gives `hotmail.com` (G is beside H), but `lastmail.com`, a
+  disposable service of its own, gets nothing: L is five keys from F. With
+  `maxKeyDistance: Infinity` it gives `fastmail.com`.
+- `glail.com` gets nothing by default, since L is two keys from M, and gives
+  `gmail.com` with `maxKeyDistance: 2`.
+- The layout matters: `aahoo.com` gives `yahoo.com` on `qwertz`, where A
+  touches Y, and nothing on `qwerty`. `tahoo.com` is the reverse.
+
+`-` and `.` aren't on the layouts, since they sit in different places on
+each one and rarely stand in for a letter. Substituting one, or any other
+character off the layout, counts as one edit only when `maxKeyDistance` is
+`Infinity` (any value of 255 or more acts the same).
+
+### Edit limit
+
+`maxEdits` is the most edits a domain may be from a target. The default, 1,
+catches one slip. 2 also catches double slips, like `hotmal.co` for
+`hotmail.com`, but turns some distinct domains into common ones:
+`yopmail.com`, a disposable service, becomes `ymail.com`. 0 turns name
+corrections off and leaves only TLD fixes, so `ada@gmial.con` gives
+`ada@gmial.com`.
+
+### Targets
+
+A domain is only ever corrected toward a target. The `domains` option comes
+first, then these, most used first, in this order:
+
+`gmail.com`, `yahoo.com`, `hotmail.com`, `outlook.com`, `icloud.com`,
+`live.com`, `googlemail.com`, `ymail.com`, `rocketmail.com`,
+`protonmail.com`, `proton.me`, `hotmail.co.uk`, `hotmail.fr`, `hotmail.de`,
+`hotmail.it`, `hotmail.es`, `hotmail.ca`, `hotmail.com.br`,
+`hotmail.com.au`, `hotmail.co.jp`, `live.co.uk`, `live.fr`, `live.de`,
+`live.it`, `live.nl`, `live.ca`, `live.com.au`, `outlook.fr`, `outlook.de`,
+`outlook.es`, `outlook.it`, `outlook.jp`, `outlook.com.br`, `yahoo.co.uk`,
+`yahoo.fr`, `yahoo.de`, `yahoo.es`, `yahoo.it`, `yahoo.ca`, `yahoo.in`,
+`yahoo.com.br`, `yahoo.com.au`, `mail.ru`, `inbox.ru`, `list.ru`,
+`yandex.ru`, `yandex.com`, `zoho.com`, `zohomail.com`, `fastmail.com`,
+`fastmail.fm`, `tutanota.com`, `tuta.com`.
+
+They're registry domains, but not all of them: most of Fastmail's alias
+domains are left out, or `gmail.co.uk` would become `fmail.co.uk`. A domain
+whose first label has three letters or fewer, like `me.com` or `gmx.de`, is
+never a target, since it's one edit from too many real domains; that
+applies to the `domains` option too, as does leaving out dotless domains.
+A domain in `ignore` is never a target.
+
+### Never corrected
+
+- Every registry domain, including those that aren't targets, and the
+  subdomains `getProvider` matches, such as `ada.fastmail.com`.
+- Every domain in `domains` or `ignore`.
+- Domain literals, dotless domains, and internationalized domains.
+
+`ignore` defaults to [`defaultIgnore`](/docs/api/classifier/classify#defaultignore),
+`mail.com` and `email.com`: real domains outside the registry that sit near
+a common one. Without it, `ada@mail.com` would become `ada@gmail.com`.
+
+Some typo domains, like `gmial.com`, are themselves on the disposable list,
+so `classify` can report an address as both disposable and a likely typo.
+The two checks don't consult each other.
+
+## Options
+
+[`ClassifyOptions`](/docs/api/classifier/classify#classifyoptions) are taken
+by `classify` and `createClassifier`. They change only the typo suggestion:
+provider, disposable, and role lookups don't take options.
+
+| Option           | Type                | Default         | What it does                                                                                                                                                                                                   |
+| ---------------- | ------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `domains`        | `readonly string[]` | `[]`            | Domains corrected toward, ahead of the built-in targets, and never corrected away from, such as your own company's. Compared without case.                                                                     |
+| `ignore`         | `readonly string[]` | `defaultIgnore` | Domains never corrected and never corrected toward, compared without case. Replaces `defaultIgnore`; spread it in to keep it: `ignore: [...defaultIgnore, 'example.org']`.                                     |
+| `keyboard`       | `Keyboard`          | `'qwerty'`      | The layout key distance is measured on: `'qwerty'`, `'qwertz'`, or `'azerty'`.                                                                                                                                 |
+| `maxEdits`       | `0`, `1`, or `2`    | `1`             | The most edits a domain may be from a target. 0 leaves only TLD fixes. See [Edit limit](#edit-limit).                                                                                                          |
+| `maxKeyDistance` | `number`            | `1`             | How many keys apart a typed letter may be from the intended one and still count as one edit. 1 is neighbors only; `Infinity` counts any substitution as one edit. See [Keyboard distance](#keyboard-distance). |
+
+The options are checked when the classifier is built, and anything malformed
+throws a `TypeError`:
+
+- `options` that aren't an object;
+- a key that isn't one of the five above, such as a misspelled `maxedits`;
+- `domains` or `ignore` that isn't an array of strings;
+- a `keyboard` that isn't one of the three layouts;
+- a `maxEdits` other than the numbers 0, 1, or 2;
+- a `maxKeyDistance` that isn't a positive integer or `Infinity`.
+
+A key set to `undefined` counts as not set.
+
+## Classification
+
+`classify` parses a string once and runs all four checks on it. Every key is
+present in the result, so an address the classifier knows nothing about is
+`{ provider: undefined, disposable: false, role: false, suggestion: undefined }`.
+
+```ts no-twoslash
+interface Classification {
+  provider: ProviderInfo | undefined;
+  disposable: boolean;
+  role: boolean;
+  suggestion: string | undefined;
+}
+```
+
+| Field        | Same as                                           |
+| ------------ | ------------------------------------------------- |
+| `provider`   | `getProvider`: the registry entry, or `undefined` |
+| `disposable` | `isDisposable`                                    |
+| `role`       | `isRoleAccount`                                   |
+| `suggestion` | `suggestCorrection` with the classifier's options |
+
+When the `practical` preset rejects a string, the first three are
+`undefined`, `false`, and `false`, but the suggestion is still worked out
+from the lenient parse. `classify('ada@gmail.con')` knows nothing but the
+suggestion, `'ada@gmail.com'`.
+
+## Classifiers and per-call options
+
+[`createClassifier`](/docs/api/classifier/classify#createclassifier) checks
+the options once and returns a
+[`Classifier`](/docs/api/classifier/classify#classifier): `classify`,
+`isDisposable`, `isRoleAccount`, `suggestCorrection`, and `getProvider`, with
+the options applied. Only `classify` and `suggestCorrection` use them; the
+other three are the standalone functions.
+
+`classify(email, options)` builds a new classifier on every call that passes
+options, checking the options and rebuilding the suggestion's domain sets
+each time. Without options it reuses one shared default classifier. When you
+classify many addresses with the same options, create a classifier once and
+reuse it.
+
+```ts ts2js
+import {
+  createClassifier,
+  defaultIgnore,
+} from '@email-utils/classifier/classify';
+
+const classifier = createClassifier({
+  domains: ['example-corp.com'],
+  ignore: [...defaultIgnore, 'gmial.com'],
+});
+
+classifier.suggestCorrection('ada@example-crop.com'); // => 'ada@example-corp.com'
+classifier.suggestCorrection('ada@gmial.com'); // => undefined
+```
+
+## Reason codes
+
+The classifier returns plain data rather than results, so it has no reason
+codes. See [the catalogue](/docs/reference/reason-codes#classifier).

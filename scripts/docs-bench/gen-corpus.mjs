@@ -1,5 +1,7 @@
 // Generates the same 42-page corpus for each tool: 6 sets of the 7 docs/api pages,
-// each page with one JS/TS tab group in that tool's native syntax.
+// each page with one JS/TS tab group in that tool's native syntax. The drafts
+// left docs/api once they became the site's reference (#43), so DOCS_API
+// points at a copy from history; see README.md.
 import fs from 'node:fs';
 import path from 'node:path';
 

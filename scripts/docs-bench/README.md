@@ -8,7 +8,11 @@ Docusaurus, Nextra, and Fumadocs building the same site. Results are in
 ## Method
 
 - **Corpus**: `gen-corpus.mjs` builds 42 pages (6 copies of the 7 `docs/api/`
-  drafts), each with one JS/TS code-tab group in the tool's own syntax.
+  drafts), each with one JS/TS code-tab group in the tool's own syntax. The
+  drafts became the site's reference pages in
+  [#43](https://github.com/email-utils/meta/issues/43) and left the repo, so
+  restore them first and point `DOCS_API` at the copy:
+  `git archive fb32149 docs/api | tar -x -C /tmp && DOCS_API=/tmp/docs/api node gen-corpus.mjs`.
 - **Sites**: each is a static export under `/meta/`, with local search and a
   home page. Only the Fumadocs site was committed, as `docs/`. To rerun, scaffold
   the other three next to these scripts:
