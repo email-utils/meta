@@ -1,8 +1,10 @@
 # deps
 /node_modules
+/typedoc/node_modules
 
 # generated content
 .source
+/content/docs/api/
 
 # test & build
 /coverage

@@ -48,14 +48,22 @@ jobs:
         with:
           node-version-file: templates/synced/.nvmrc
           cache: npm
-          cache-dependency-path: docs/package-lock.json
+          cache-dependency-path: |
+            docs/package-lock.json
+            docs/typedoc/package-lock.json
 
+      # Its postinstall installs docs/typedoc too, the API reference's
+      # generator, which is on TypeScript 6 until TypeDoc supports 7.
       - name: Install dependencies
         run: npm ci
 
       - name: Typecheck
-        run: npm run types:check
+        run: |
+          npm run types:check
+          npm run typecheck --prefix typedoc
 
+      # The link check and the build each write the API reference from the
+      # packages' .d.ts files first, so their links are checked too.
       - name: Check links
         run: npm run lint:links
 
